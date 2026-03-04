@@ -35,6 +35,8 @@ export const DEFAULT_RULES_CONFIG: RulesConfig = {
 // LAYER 6 — History + Color Types
 // ============================================================
 export type DieColor = 'white' | 'red' | 'blue' | 'green';
+/** Extra dice generated per sustained-hit critical. */
+export type SustainedX = 1 | 2 | 3;
 
 export interface RollHistoryEntry {
   id: string;

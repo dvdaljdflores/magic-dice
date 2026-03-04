@@ -1,11 +1,12 @@
 /**
  * LAYER 1 — DiceScene: InstancedMesh Renderer (no physics)
  *
- * LAYER 3 — Two display modes:
- *   PREVIEW  — harmonic grid, all dice show face-6 orientation
- *   ARRANGED — sorted rows by face value, all dice in a row face same direction
+ * Two InstancedMeshes:
+ *   1. meshRef     — normal dice (white/red/blue/green per dieColor)
+ *   2. lethalMeshRef — lethal/mortal-wound dice (fixed purple)
  *
- * LAYER 3 — Dynamic die scale: clamp(9/√n, 0.55, 1.5)
+ * Lethal zone: front strip of the board at z = LETHAL_ZONE_Z.
+ * When lethal dice are present, normal dice compress into z = -7 to +1.5.
  */
 
 'use client';
@@ -15,14 +16,18 @@ import * as THREE from 'three';
 import type { DiceRollResult, GameState, DieColor } from '../core/types';
 import { createDiceGeometry } from '../rendering/DiceGeometry';
 import { createDiceMaterial, DIE_COLOR_MAP } from '../rendering/DiceMaterial';
-// All instances share one material; color is updated via mat.color (no instanceColor needed)
 import { PREVIEW_QUATERNION, faceUpQuaternion } from '../core/DiceEngine';
 
 const MAX_DICE = 120;
 const BOARD_W  = 22;
 const BOARD_D  = 16;
-const ROW_SP   = 2.0;   // row spacing × dieScale
-const COL_SP   = 1.35;  // col spacing × dieScale
+const ROW_SP   = 2.0;
+const COL_SP   = 1.35;
+
+// Lethal zone constants
+const LETHAL_ZONE_Z  = 6.0;  // z-center of mortal wounds strip
+const NORMAL_Z_MIN   = -7.0; // normal dice back edge
+const NORMAL_Z_MAX   =  1.5; // normal dice front edge when lethal exists
 
 const _p    = new THREE.Vector3();
 const _q    = new THREE.Quaternion();
@@ -40,30 +45,46 @@ interface DiceSceneProps {
   rollResult: DiceRollResult | null;
   dieColor: DieColor;
   activeMask: boolean[] | null;
+  lethalMask: boolean[] | null;
 }
 
 export function DiceScene({
-  count, gameState, rollResult, dieColor, activeMask,
+  count, gameState, rollResult, dieColor, activeMask, lethalMask,
 }: DiceSceneProps) {
-  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const meshRef      = useRef<THREE.InstancedMesh>(null);
+  const lethalMeshRef = useRef<THREE.InstancedMesh>(null);
 
-  const geo = useMemo(() => createDiceGeometry(), []);
-  // No singleton cache — fresh material per mount so changes take effect immediately
-  const mat = useMemo(() => createDiceMaterial(), []);
+  const geo      = useMemo(() => createDiceGeometry(), []);
+  const mat      = useMemo(() => createDiceMaterial(), []);
+  const lethalMat = useMemo(() => {
+    const m = createDiceMaterial();
+    m.color.set(0.55, 0.08, 0.82); // purple for mortal wounds
+    return m;
+  }, []);
+
+  const hasAnyLethal = useMemo(
+    () => !!lethalMask?.some(Boolean),
+    [lethalMask],
+  );
 
   useEffect(() => {
-    const mesh = meshRef.current;
-    if (!mesh) return;
+    const mesh      = meshRef.current;
+    const lethalMesh = lethalMeshRef.current;
+    if (!mesh || !lethalMesh) return;
+
+    // Hide all slots in both meshes
+    for (let i = 0; i < MAX_DICE; i++) {
+      mesh.setMatrixAt(i, _zero);
+      lethalMesh.setMatrixAt(i, _zero);
+    }
+
     const n = count;
-
-    // Hide all slots first
-    for (let i = 0; i < MAX_DICE; i++) mesh.setMatrixAt(i, _zero);
-
     if (n > 0) {
       const s = computeScale(n);
       _sc.set(s, s, s);
 
       if (gameState === 'PREVIEW' || !rollResult) {
+        // ── PREVIEW: all dice in a centered grid ───────────────────────
         const cols    = Math.ceil(Math.sqrt(n * 1.3));
         const spacing = s * 1.4;
         const ox      = -((cols - 1) * spacing) / 2;
@@ -78,42 +99,71 @@ export function DiceScene({
           mesh.setMatrixAt(i, _mat);
         }
       } else {
-        const groups: Record<number, number[]> = {};
+        // ── ARRANGED: split normal vs lethal ───────────────────────────
+        const normalGroups: Record<number, number[]> = {};
+        const lethalGroups: Record<number, number[]> = {};
+
         for (let i = 0; i < rollResult.values.length; i++) {
           if (activeMask && !activeMask[i]) continue;
-          const v = rollResult.values[i];
-          if (!groups[v]) groups[v] = [];
-          groups[v].push(i);
+          const v        = rollResult.values[i];
+          const isLethal = lethalMask?.[i] ?? false;
+          const target   = isLethal ? lethalGroups : normalGroups;
+          if (!target[v]) target[v] = [];
+          target[v].push(i);
         }
-        const presentVals = [1, 2, 3, 4, 5, 6].filter(v => (groups[v]?.length ?? 0) > 0);
-        const rowSp     = s * ROW_SP;
-        const colSp     = s * COL_SP;
-        const totalD    = (presentVals.length - 1) * rowSp;
-        const startZ    = -totalD / 2;
-        // All rows share same startX — left-aligned from widest row
-        const maxRowLen = Math.max(...presentVals.map(v => groups[v].length));
-        const startX    = -((maxRowLen - 1) * colSp) / 2;
-        presentVals.forEach((v, rowIdx) => {
-          const row = groups[v];
-          const z   = startZ + rowIdx * rowSp;
-          // Use faceUpQuaternion(v) — no random yaw, all dice in row face same direction
-          _q.copy(faceUpQuaternion(v));
-          row.forEach((dieIdx, colIdx) => {
-            _p.set(startX + colIdx * colSp, s / 2 + 0.01, z);
-            _mat.compose(_p, _q, _sc);
-            mesh.setMatrixAt(dieIdx, _mat);
+
+        // Normal dice — compressed z-range when lethal zone is in use
+        const normalVals = [1, 2, 3, 4, 5, 6].filter(v => (normalGroups[v]?.length ?? 0) > 0);
+        if (normalVals.length > 0) {
+          const rowSp   = s * ROW_SP;
+          const colSp   = s * COL_SP;
+          const zMin    = hasAnyLethal ? NORMAL_Z_MIN : -(BOARD_D / 2 - s);
+          const zMax    = hasAnyLethal ? NORMAL_Z_MAX :  (BOARD_D / 2 - s);
+          const avail   = zMax - zMin;
+          const span    = (normalVals.length - 1) * rowSp;
+          const startZ  = zMin + Math.max(0, (avail - span) / 2);
+          const maxLen  = Math.max(...normalVals.map(v => normalGroups[v].length));
+          const startX  = -((maxLen - 1) * colSp) / 2;
+
+          normalVals.forEach((v, rowIdx) => {
+            const row = normalGroups[v];
+            const z   = startZ + rowIdx * rowSp;
+            _q.copy(faceUpQuaternion(v));
+            row.forEach((dieIdx, colIdx) => {
+              _p.set(startX + colIdx * colSp, s / 2 + 0.01, z);
+              _mat.compose(_p, _q, _sc);
+              mesh.setMatrixAt(dieIdx, _mat);
+            });
           });
-        });
+        }
+
+        // Lethal dice — single row at LETHAL_ZONE_Z
+        const lethalAll: { dieIdx: number; v: number }[] = [];
+        for (const v of [1, 2, 3, 4, 5, 6]) {
+          for (const dieIdx of lethalGroups[v] ?? []) {
+            lethalAll.push({ dieIdx, v });
+          }
+        }
+        if (lethalAll.length > 0) {
+          const colSp  = s * COL_SP;
+          const startX = -((lethalAll.length - 1) * colSp) / 2;
+          lethalAll.forEach(({ dieIdx, v }, colIdx) => {
+            _q.copy(faceUpQuaternion(v));
+            _p.set(startX + colIdx * colSp, s / 2 + 0.01, LETHAL_ZONE_Z);
+            _mat.compose(_p, _q, _sc);
+            lethalMesh.setMatrixAt(dieIdx, _mat);
+          });
+        }
       }
 
+      mat.color.copy(DIE_COLOR_MAP[dieColor]);
     }
 
     mesh.instanceMatrix.needsUpdate = true;
+    lethalMesh.instanceMatrix.needsUpdate = true;
     mesh.count = MAX_DICE;
-
-    // Update shared material color — no instanceColor buffer needed, no timing issues
-    mat.color.copy(DIE_COLOR_MAP[dieColor]);
-  }, [count, gameState, rollResult, activeMask, dieColor]);
+    lethalMesh.count = MAX_DICE;
+  }, [count, gameState, rollResult, activeMask, lethalMask, dieColor, hasAnyLethal]);
 
   return (
     <>
@@ -153,10 +203,27 @@ export function DiceScene({
         </mesh>
       ))}
 
-      {/* InstancedMesh — up to 120 dice, one draw call */}
+      {/* Mortal Wounds zone — dark red strip at front of board */}
+      {hasAnyLethal && (
+        <mesh position={[0, 0.002, LETHAL_ZONE_Z]}>
+          <boxGeometry args={[BOARD_W - 1.4, 0.012, 3.6]} />
+          <meshStandardMaterial color="#3a0010" roughness={0.9} transparent opacity={0.75} />
+        </mesh>
+      )}
+
+      {/* Normal dice */}
       <instancedMesh
         ref={meshRef}
         args={[geo, mat, MAX_DICE]}
+        castShadow
+        receiveShadow
+        frustumCulled={false}
+      />
+
+      {/* Lethal / Mortal Wound dice — purple material */}
+      <instancedMesh
+        ref={lethalMeshRef}
+        args={[geo, lethalMat, MAX_DICE]}
         castShadow
         receiveShadow
         frustumCulled={false}

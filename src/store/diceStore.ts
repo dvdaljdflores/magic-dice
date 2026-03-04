@@ -1,8 +1,7 @@
 /**
  * LAYER 1/2/6 — Zustand Store
  *
- * Centralises all dice state previously spread across 10 useState calls
- * in WarhammerBoard.tsx. Enables non-reactive reads in useFrame via
+ * Centralises all dice state. Enables non-reactive reads in useFrame via
  * getState() and selective subscriptions in UI components.
  */
 
@@ -15,6 +14,15 @@ import { rollDice, rollSpecificDice, generateSeed, addDice } from '../core/DiceE
 import { computeThrowParams } from '../core/ThrowCalculator';
 import { computeArrangeTargets, computeScale } from '../core/ArrangeLayout';
 import { PHYSICS_CONFIG } from '../physics/constants';
+
+// ─── Undo Snapshot ───────────────────────────────────────────────────
+
+interface UndoSnapshot {
+  rollResult: DiceRollResult | null;
+  activeMask: boolean[] | null;
+  lethalMask: boolean[] | null;
+  count: number;
+}
 
 // ─── Store Interface ──────────────────────────────────────────────────
 
@@ -30,6 +38,9 @@ export interface DiceState {
   currentTurn: number;
   currentPhase: WarhPhase | null;
   sustainedX: SustainedX;
+
+  // --- Undo ---
+  undoStack: UndoSnapshot[];
 
   // --- Physics animation state ---
   throwParams: ThrowParams[] | null;
@@ -49,6 +60,7 @@ export interface DiceState {
   setTurn: (t: number) => void;
   setWarhPhase: (p: WarhPhase | null) => void;
   setSustainedX: (x: SustainedX) => void;
+  undo: () => void;
 
   // --- Physics callbacks ---
   onAllDiceSettled: () => void;
@@ -69,6 +81,7 @@ export const useDiceStore = create<DiceState>((set, get) => ({
   currentTurn: 1,
   currentPhase: null,
   sustainedX: 1,
+  undoStack: [],
   throwParams: null,
   arrangeTargets: null,
   arrangeProgress: 0,
@@ -91,15 +104,11 @@ export const useDiceStore = create<DiceState>((set, get) => ({
     const { count, dieColor, currentTurn, currentPhase } = get();
     if (count === 0) return;
 
-    // 1. Deterministic result
     const seed = generateSeed();
     const result = rollDice(count, seed);
-
-    // 2. Visual throw parameters (separate seed)
     const throwSeed = generateSeed();
     const throwParams = computeThrowParams(count, throwSeed);
 
-    // 3. Update state
     set({
       rollResult: result,
       activeMask: new Array(count).fill(true),
@@ -108,9 +117,9 @@ export const useDiceStore = create<DiceState>((set, get) => ({
       arrangeTargets: null,
       arrangeProgress: 0,
       phase: 'ROLLING',
+      undoStack: [],
     });
 
-    // 4. History
     set(s => ({
       history: [...s.history, {
         id: `roll-${Date.now()}`,
@@ -145,6 +154,7 @@ export const useDiceStore = create<DiceState>((set, get) => ({
       arrangeTargets: null,
       arrangeProgress: 0,
       phase: 'ROLLING',
+      undoStack: [],
     });
 
     set(s => ({
@@ -162,51 +172,106 @@ export const useDiceStore = create<DiceState>((set, get) => ({
     }));
   },
 
-  // ── Delete face-value group ─────────────────────────────────────────
+  // ── Delete all dice with face value ≤ faceValue ─────────────────────
 
   deleteFace: (faceValue) => {
-    const { rollResult } = get();
-    if (!rollResult) return;
+    const { rollResult, activeMask, lethalMask, count, dieColor, currentTurn, currentPhase } = get();
+    if (!rollResult || !activeMask) return;
 
+    // Push undo before mutating
     set(s => ({
-      activeMask: s.activeMask?.map((active, i) =>
-        active && rollResult.values[i] === faceValue ? false : active,
-      ) ?? null,
-      lethalMask: s.lethalMask?.map((lethal, i) =>
-        rollResult.values[i] === faceValue ? false : lethal,
-      ) ?? null,
+      undoStack: [...s.undoStack.slice(-9), {
+        rollResult: s.rollResult,
+        activeMask: s.activeMask ? [...s.activeMask] : null,
+        lethalMask: s.lethalMask ? [...s.lethalMask] : null,
+        count: s.count,
+      }],
     }));
+
+    // Collect deleted dice values for history
+    const deletedValues: number[] = [];
+    const newActiveMask = activeMask.map((active, i) => {
+      if (active && rollResult.values[i] <= faceValue) {
+        deletedValues.push(rollResult.values[i]);
+        return false;
+      }
+      return active;
+    });
+    const newLethalMask = (lethalMask ?? new Array(rollResult.values.length).fill(false))
+      .map((lethal: boolean, i: number) =>
+        rollResult.values[i] <= faceValue ? false : lethal,
+      );
+
+    const scale = computeScale(count);
+    const hasLethal = newLethalMask.some(Boolean);
+    const targets = computeArrangeTargets(
+      rollResult.values, newActiveMask, newLethalMask, scale, hasLethal,
+    );
+
+    set({
+      activeMask: newActiveMask,
+      lethalMask: newLethalMask,
+      arrangeTargets: targets,
+      arrangeProgress: 0,
+      phase: 'ARRANGING',
+    });
+
+    if (deletedValues.length > 0) {
+      set(s => ({
+        history: [...s.history, {
+          id: `del-${Date.now()}`,
+          timestamp: Date.now(),
+          turn: currentTurn,
+          phase: currentPhase,
+          diceCount: deletedValues.length,
+          values: deletedValues,
+          color: dieColor,
+          seed: '',
+          isReroll: false,
+          actionLabel: `⊘ del ≤${faceValue}`,
+        }],
+      }));
+    }
   },
 
-  // ── Re-roll face-value group (skips lethal) ─────────────────────────
+  // ── Re-roll all non-lethal active dice with face value ≤ faceValue ──
 
   rerollFace: (faceValue) => {
-    const { rollResult, activeMask, lethalMask, dieColor, currentTurn, currentPhase } = get();
-    if (!rollResult) return;
+    const { rollResult, activeMask, lethalMask, count, dieColor, currentTurn, currentPhase } = get();
+    if (!rollResult || !activeMask) return;
 
     const indices: number[] = [];
     for (let i = 0; i < rollResult.values.length; i++) {
-      if (activeMask && !activeMask[i]) continue;
+      if (!activeMask[i]) continue;
       if (lethalMask && lethalMask[i]) continue;
-      if (rollResult.values[i] === faceValue) indices.push(i);
+      if (rollResult.values[i] <= faceValue) indices.push(i);
     }
     if (indices.length === 0) return;
+
+    // Push undo before mutating
+    set(s => ({
+      undoStack: [...s.undoStack.slice(-9), {
+        rollResult: s.rollResult,
+        activeMask: s.activeMask ? [...s.activeMask] : null,
+        lethalMask: s.lethalMask ? [...s.lethalMask] : null,
+        count: s.count,
+      }],
+    }));
 
     const seed = generateSeed();
     const updated = rollSpecificDice(rollResult, indices, seed);
 
-    // Compute throw params only for the rerolled dice
-    const throwSeed = generateSeed();
-    const allThrowParams = computeThrowParams(rollResult.count, throwSeed);
-    // Only rerolled dice get real throw params; others get null-like (they stay in place)
-    const throwParams = allThrowParams;
+    const scale = computeScale(count);
+    const hasLethal = (lethalMask ?? []).some(Boolean);
+    const targets = computeArrangeTargets(
+      updated.values, activeMask, lethalMask ?? new Array(updated.count).fill(false), scale, hasLethal,
+    );
 
     set({
       rollResult: updated,
-      throwParams,
-      arrangeTargets: null,
+      arrangeTargets: targets,
       arrangeProgress: 0,
-      phase: 'ROLLING',
+      phase: 'ARRANGING',
     });
 
     set(s => ({
@@ -220,6 +285,7 @@ export const useDiceStore = create<DiceState>((set, get) => ({
         color: dieColor,
         seed,
         isReroll: true,
+        actionLabel: `↺ roll ≤${faceValue}`,
       }],
     }));
   },
@@ -227,7 +293,7 @@ export const useDiceStore = create<DiceState>((set, get) => ({
   // ── Toggle lethal for a face-value group ────────────────────────────
 
   toggleLethal: (faceValue) => {
-    const { rollResult, activeMask, lethalMask } = get();
+    const { rollResult, activeMask, lethalMask, count, dieColor, currentTurn, currentPhase } = get();
     if (!rollResult || !activeMask) return;
 
     const activeOfValue = rollResult.values
@@ -238,14 +304,23 @@ export const useDiceStore = create<DiceState>((set, get) => ({
     const allLethal = activeOfValue.every(i => lethalMask?.[i] ?? false);
     const newLethal = !allLethal;
 
+    // Push undo before mutating
+    set(s => ({
+      undoStack: [...s.undoStack.slice(-9), {
+        rollResult: s.rollResult,
+        activeMask: s.activeMask ? [...s.activeMask] : null,
+        lethalMask: s.lethalMask ? [...s.lethalMask] : null,
+        count: s.count,
+      }],
+    }));
+
     const updatedLethalMask = (lethalMask ?? new Array(rollResult.values.length).fill(false))
       .map((lethal: boolean, i: number) => {
         if (!activeMask[i] || rollResult.values[i] !== faceValue) return lethal;
         return newLethal;
       });
 
-    // Re-compute arrange targets for the new lethal layout
-    const scale = computeScale(rollResult.count);
+    const scale = computeScale(count);
     const hasLethal = updatedLethalMask.some(Boolean);
     const targets = computeArrangeTargets(
       rollResult.values, activeMask, updatedLethalMask, scale, hasLethal,
@@ -257,12 +332,27 @@ export const useDiceStore = create<DiceState>((set, get) => ({
       arrangeProgress: 0,
       phase: 'ARRANGING',
     });
+
+    set(s => ({
+      history: [...s.history, {
+        id: `lethal-${Date.now()}`,
+        timestamp: Date.now(),
+        turn: currentTurn,
+        phase: currentPhase,
+        diceCount: activeOfValue.length,
+        values: activeOfValue.map(i => rollResult.values[i]),
+        color: dieColor,
+        seed: '',
+        isReroll: false,
+        actionLabel: newLethal ? `☠ lethal ×${activeOfValue.length} (${faceValue})` : `☠ lethal off (${faceValue})`,
+      }],
+    }));
   },
 
-  // ── Sustained Hits: add N × sustainedX new dice ─────────────────────
+  // ── Sustained Hits: add N × sustainedX new dice, no physics re-throw ─
 
   sustainedHits: (faceValue) => {
-    const { rollResult, activeMask, lethalMask, sustainedX, dieColor, currentTurn, currentPhase } = get();
+    const { rollResult, activeMask, lethalMask, sustainedX, count, dieColor, currentTurn, currentPhase } = get();
     if (!rollResult || !activeMask) return;
 
     let n = 0;
@@ -276,21 +366,37 @@ export const useDiceStore = create<DiceState>((set, get) => ({
     const extra = Math.min(n * sustainedX, 120 - rollResult.count);
     if (extra <= 0) return;
 
+    // Push undo before mutating
+    set(s => ({
+      undoStack: [...s.undoStack.slice(-9), {
+        rollResult: s.rollResult,
+        activeMask: s.activeMask ? [...s.activeMask] : null,
+        lethalMask: s.lethalMask ? [...s.lethalMask] : null,
+        count: s.count,
+      }],
+    }));
+
     const seed = generateSeed();
     const updated = addDice(rollResult, extra, seed);
-    const throwSeed = generateSeed();
-    const throwParams = computeThrowParams(updated.count, throwSeed);
+    const newCount = updated.count;
+    const newActiveMask = [...(activeMask ?? []), ...new Array(extra).fill(true)];
+    const newLethalMask = [...(lethalMask ?? []), ...new Array(extra).fill(false)];
 
-    set(s => ({
+    const scale = computeScale(newCount);
+    const hasLethal = newLethalMask.some(Boolean);
+    const targets = computeArrangeTargets(
+      updated.values, newActiveMask, newLethalMask, scale, hasLethal,
+    );
+
+    set({
       rollResult: updated,
-      count: updated.count,
-      activeMask: [...(s.activeMask ?? []), ...new Array(extra).fill(true)],
-      lethalMask: [...(s.lethalMask ?? []), ...new Array(extra).fill(false)],
-      throwParams,
-      arrangeTargets: null,
+      count: newCount,
+      activeMask: newActiveMask,
+      lethalMask: newLethalMask,
+      arrangeTargets: targets,
       arrangeProgress: 0,
-      phase: 'ROLLING',
-    }));
+      phase: 'ARRANGING',
+    });
 
     set(s => ({
       history: [...s.history, {
@@ -303,6 +409,52 @@ export const useDiceStore = create<DiceState>((set, get) => ({
         color: dieColor,
         seed,
         isReroll: false,
+        actionLabel: `✦ sus ×${sustainedX} en ${faceValue} (+${extra})`,
+      }],
+    }));
+  },
+
+  // ── Undo last action ────────────────────────────────────────────────
+
+  undo: () => {
+    const { undoStack, dieColor, currentTurn, currentPhase } = get();
+    if (undoStack.length === 0) return;
+
+    const last = undoStack[undoStack.length - 1];
+    const newStack = undoStack.slice(0, -1);
+
+    let targets: Map<number, ArrangeTarget> | null = null;
+    if (last.rollResult && last.activeMask && last.lethalMask) {
+      const scale = computeScale(last.count);
+      const hasLethal = last.lethalMask.some(Boolean);
+      targets = computeArrangeTargets(
+        last.rollResult.values, last.activeMask, last.lethalMask, scale, hasLethal,
+      );
+    }
+
+    set({
+      rollResult: last.rollResult,
+      activeMask: last.activeMask,
+      lethalMask: last.lethalMask,
+      count: last.count,
+      undoStack: newStack,
+      arrangeTargets: targets,
+      arrangeProgress: 0,
+      phase: targets ? 'ARRANGING' : 'PREVIEW',
+    });
+
+    set(s => ({
+      history: [...s.history, {
+        id: `undo-${Date.now()}`,
+        timestamp: Date.now(),
+        turn: currentTurn,
+        phase: currentPhase,
+        diceCount: 0,
+        values: [],
+        color: dieColor,
+        seed: '',
+        isReroll: false,
+        actionLabel: '↩ regresar',
       }],
     }));
   },
@@ -319,6 +471,7 @@ export const useDiceStore = create<DiceState>((set, get) => ({
       throwParams: null,
       arrangeTargets: null,
       arrangeProgress: 0,
+      undoStack: [],
     });
   },
 

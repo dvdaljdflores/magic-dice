@@ -13,18 +13,24 @@ export const PHYSICS_CONFIG = {
   restitution: 0.3,
 
   /** Surface friction for table contact */
-  friction: 0.6,
+  friction: 0.7,
 
-  /** Damping to help dice settle faster */
-  linearDamping: 0.3,
-  angularDamping: 0.2,
+  /** Higher damping helps all dice settle, especially with many */
+  linearDamping: 0.5,
+  angularDamping: 0.55,
 
   /** Settle detection thresholds */
   settleLinvelThreshold: 0.08,
   settleAngvelThreshold: 0.1,
 
+  /** Force-settle after this many seconds to prevent infinite bounce */
+  settleTimeoutSeconds: 9,
+
+  /** Frames of consecutive settling before triggering arrange */
+  settleFrameCount: 15,
+
   /** Speed of the arrange lerp animation (progress per second) */
-  arrangeSpeed: 3.0,
+  arrangeSpeed: 2.5,
 
   /** Throw height range (y-coordinate of start position) */
   throwHeightMin: 6,

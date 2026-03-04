@@ -32,6 +32,7 @@ export default function WarhammerBoard() {
   const currentTurn  = useDiceStore(s => s.currentTurn);
   const currentPhase = useDiceStore(s => s.currentPhase);
   const sustainedX   = useDiceStore(s => s.sustainedX);
+  const undoStack    = useDiceStore(s => s.undoStack);
 
   const addCount      = useDiceStore(s => s.addCount);
   const throwDice     = useDiceStore(s => s.throwDice);
@@ -45,6 +46,9 @@ export default function WarhammerBoard() {
   const setTurn       = useDiceStore(s => s.setTurn);
   const setWarhPhase  = useDiceStore(s => s.setWarhPhase);
   const setSustainedX = useDiceStore(s => s.setSustainedX);
+  const undo          = useDiceStore(s => s.undo);
+
+  const canUndo = undoStack.length > 0 && phase !== 'ROLLING' && phase !== 'SETTLING';
 
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative', background: '#08080f' }}>
@@ -105,6 +109,8 @@ export default function WarhammerBoard() {
         onReroll={rerollFace}
         onSustainedHits={sustainedHits}
         onToggleLethal={toggleLethal}
+        onUndo={undo}
+        canUndo={canUndo}
       />
     </div>
   );

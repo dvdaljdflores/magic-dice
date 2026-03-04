@@ -3,8 +3,9 @@
  *
  * Shows 6 fixed face-value rows. Each row has:
  *   del-N  roll-N  sus (sustained hits)  let (toggle lethal)
- * Sustained dice generate extra dice (×sustainedX).
- * Lethal dice are isolated on the board and cannot be rerolled.
+ * del/roll affect all dice with value ≤ N.
+ * Counts hidden during animation.
+ * "Regresar" button undoes last action.
  */
 
 'use client';
@@ -27,6 +28,8 @@ interface ResultsPanelProps {
   onReroll:          (faceValue: number) => void;
   onSustainedHits:   (faceValue: number) => void;
   onToggleLethal:    (faceValue: number) => void;
+  onUndo:            () => void;
+  canUndo:           boolean;
 }
 
 const COLOR_HEX: Record<DieColor, string> = {
@@ -45,6 +48,7 @@ function formatTime(ts: number): string {
 }
 
 function formatHistoryValues(values: number[]): string {
+  if (values.length === 0) return '';
   const counts: Record<number, number> = {};
   for (const v of values) counts[v] = (counts[v] ?? 0) + 1;
   return [1, 2, 3, 4, 5, 6]
@@ -57,17 +61,24 @@ function phaseLabel(phase: WarhPhase | null): string {
   return phase ? WARH_PHASE_LABEL[phase] : '';
 }
 
+function spinningLabel(phase: GamePhase): string {
+  if (phase === 'ROLLING')   return 'lanzando…';
+  if (phase === 'SETTLING')  return 'estabilizando…';
+  if (phase === 'ARRANGING') return 'organizando…';
+  return '';
+}
+
 export function ResultsPanel({
   rollResult, activeMask, lethalMask, dieColor, history, gamePhase,
   sustainedX, onSustainedXChange,
   onDelete, onReroll, onSustainedHits, onToggleLethal,
+  onUndo, canUndo,
 }: ResultsPanelProps) {
-  const dipColor = COLOR_HEX[dieColor];
-  const hasResult = rollResult !== null;
+  const dipColor   = COLOR_HEX[dieColor];
+  const hasResult  = rollResult !== null;
   const inArranged = gamePhase === 'ARRANGED';
-  const busy = gamePhase === 'ROLLING' || gamePhase === 'SETTLING' || gamePhase === 'ARRANGING';
+  const busy       = gamePhase === 'ROLLING' || gamePhase === 'SETTLING' || gamePhase === 'ARRANGING';
 
-  // Count active dice showing face v (includes lethal)
   function getFaceCount(v: number): number {
     if (!rollResult) return 0;
     let n = 0;
@@ -78,7 +89,6 @@ export function ResultsPanel({
     return n;
   }
 
-  // Count rerollable (active, non-lethal) dice of face v
   function getRerollableCount(v: number): number {
     if (!rollResult) return 0;
     let n = 0;
@@ -90,7 +100,6 @@ export function ResultsPanel({
     return n;
   }
 
-  // Count lethal dice of face v
   function getLethalCount(v: number): number {
     if (!rollResult || !lethalMask) return 0;
     let n = 0;
@@ -101,40 +110,71 @@ export function ResultsPanel({
     return n;
   }
 
-  // Is entire active group of face v lethal?
   function isGroupLethal(v: number): boolean {
     const cnt = getFaceCount(v);
     return cnt > 0 && getLethalCount(v) === cnt;
   }
 
-  const totalActive = FACES.reduce((s, v) => s + getFaceCount(v), 0);
+  // Count of dice that would be deleted/rerolled by clicking ≤v button
+  function getDeleteableCount(v: number): number {
+    if (!rollResult) return 0;
+    let n = 0;
+    for (let f = 1; f <= v; f++) n += getFaceCount(f);
+    return n;
+  }
+
+  function getRerollableBelowCount(v: number): number {
+    if (!rollResult) return 0;
+    let n = 0;
+    for (let f = 1; f <= v; f++) n += getRerollableCount(f);
+    return n;
+  }
+
+  const totalActive = FACES.reduce((acc, v) => acc + getFaceCount(v), 0);
 
   return (
     <div style={s.panel}>
-      {/* ── Sustained Hits config ──────────────────────────────────────── */}
-      <div style={s.susRow}>
-        <span style={s.susLabel}>SUS ×</span>
-        {([1, 2, 3] as SustainedX[]).map(x => (
-          <button
-            key={x}
-            style={{ ...s.susBtn, ...(sustainedX === x ? s.susBtnActive : {}) }}
-            onClick={() => onSustainedXChange(x)}
-          >
-            {x}
-          </button>
-        ))}
+      {/* ── SUS × selector + Regresar ──────────────────────────────────── */}
+      <div style={s.topRow}>
+        <div style={s.susRow}>
+          <span style={s.susLabel}>SUS ×</span>
+          {([1, 2, 3] as SustainedX[]).map(x => (
+            <button
+              key={x}
+              style={{ ...s.susBtn, ...(sustainedX === x ? s.susBtnActive : {}) }}
+              onClick={() => onSustainedXChange(x)}
+            >
+              {x}
+            </button>
+          ))}
+        </div>
+
+        <button
+          style={{ ...s.undoBtn, opacity: canUndo ? 1 : 0.35 }}
+          disabled={!canUndo}
+          onClick={onUndo}
+          title="Deshacer última acción"
+        >
+          ↩ Regresar
+        </button>
       </div>
 
-      {/* ── Results ───────────────────────────────────────────────────────── */}
+      {/* ── Results ───────────────────────────────────────────────────── */}
       <div style={s.sectionHead}>RESULTADO</div>
+
+      {busy && (
+        <div style={s.animStatus}>{spinningLabel(gamePhase)}</div>
+      )}
 
       <table style={s.table}>
         <tbody>
           {FACES.map(v => {
-            const cnt        = getFaceCount(v);
-            const rerollable = getRerollableCount(v);
-            const lethalCnt  = getLethalCount(v);
+            const cnt         = getFaceCount(v);
+            const rerollable  = getRerollableCount(v);
+            const lethalCnt   = getLethalCount(v);
             const groupLethal = isGroupLethal(v);
+            const delCount    = getDeleteableCount(v);
+            const rollCount   = getRerollableBelowCount(v);
 
             return (
               <tr key={v} style={s.row}>
@@ -146,16 +186,19 @@ export function ResultsPanel({
                   <span style={s.faceNum}>{v}</span>
                 </td>
 
-                {/* Count */}
+                {/* Count — hidden during animation */}
                 <td style={s.cnt}>
-                  {cnt > 0
-                    ? <span>{`× ${cnt}`}</span>
-                    : <span style={{ color: '#2a3a50' }}>—</span>}
+                  {busy
+                    ? <span style={{ color: '#1a3a5a' }}>···</span>
+                    : cnt > 0
+                      ? <span>{`× ${cnt}`}</span>
+                      : <span style={{ color: '#2a3a50' }}>—</span>
+                  }
                 </td>
 
                 {/* Lethal badge */}
                 <td style={s.lethalCell}>
-                  {lethalCnt > 0 && (
+                  {inArranged && lethalCnt > 0 && (
                     <span style={s.lethalBadge} title={`${lethalCnt} letales (Mortal Wounds)`}>
                       ☠{lethalCnt}
                     </span>
@@ -165,18 +208,18 @@ export function ResultsPanel({
                 {/* Action buttons */}
                 <td style={s.actions}>
                   <button
-                    style={{ ...s.actBtn, color: hasResult && cnt > 0 && !busy ? '#ff5555' : '#2a3a50' }}
-                    title={`Eliminar todos los ${v}`}
+                    style={{ ...s.actBtn, color: hasResult && delCount > 0 && !busy ? '#ff5555' : '#2a3a50' }}
+                    title={`Eliminar todos los dados ≤${v} (${delCount} dados)`}
                     onClick={() => onDelete(v)}
-                    disabled={!hasResult || cnt === 0 || busy}
+                    disabled={busy || !hasResult || delCount === 0}
                   >
                     del
                   </button>
                   <button
-                    style={{ ...s.actBtn, color: hasResult && rerollable > 0 && !busy ? '#00d4ff' : '#2a3a50' }}
-                    title={`Re-tirar ${v}s (excluye letales)`}
+                    style={{ ...s.actBtn, color: hasResult && rollCount > 0 && !busy ? '#00d4ff' : '#2a3a50' }}
+                    title={`Re-tirar dados ≤${v} (excluye letales, ${rollCount} dados)`}
                     onClick={() => onReroll(v)}
-                    disabled={!hasResult || rerollable === 0 || busy}
+                    disabled={busy || !hasResult || rollCount === 0}
                   >
                     roll
                   </button>
@@ -198,7 +241,7 @@ export function ResultsPanel({
                     }}
                     title={groupLethal ? `Quitar lethal de ${v}s` : `Marcar ${v}s como Mortal Wounds`}
                     onClick={() => onToggleLethal(v)}
-                    disabled={!hasResult || cnt === 0 || busy}
+                    disabled={busy || !hasResult || cnt === 0}
                   >
                     {groupLethal ? '☠let' : 'let'}
                   </button>
@@ -209,14 +252,14 @@ export function ResultsPanel({
         </tbody>
       </table>
 
-      {hasResult && (
+      {inArranged && hasResult && (
         <div style={s.total}>
           <span style={{ color: '#3a5a7a' }}>TOTAL ACTIVOS</span>
           <span style={{ color: '#c9a84c', fontWeight: 700 }}>{totalActive}</span>
         </div>
       )}
 
-      {/* ── History ───────────────────────────────────────────────────────── */}
+      {/* ── History ───────────────────────────────────────────────────── */}
       <div style={{ ...s.sectionHead, marginTop: 10 }}>HISTORIAL</div>
 
       {history.length === 0 ? (
@@ -225,21 +268,29 @@ export function ResultsPanel({
         <div style={s.histList}>
           {[...history].reverse().map(entry => {
             const pLabel = phaseLabel(entry.phase);
-            const title  = `Turno ${entry.turn}${pLabel ? ` (${pLabel})` : ''}${entry.isReroll ? ' · rep.' : ''}`;
+            const isAction = !!entry.actionLabel;
+            const title = isAction
+              ? entry.actionLabel!
+              : `Turno ${entry.turn}${pLabel ? ` (${pLabel})` : ''}${entry.isReroll ? ' · rep.' : ''}`;
+            const valStr = formatHistoryValues(entry.values);
             return (
               <div key={entry.id} style={s.histBlock}>
                 <div style={s.histTitle}>
                   <span style={histDotStyle(COLOR_HEX[entry.color])} />
-                  <span style={{ color: entry.isReroll ? '#c9a84c' : '#4a7aaa' }}>
+                  <span style={{
+                    color: isAction
+                      ? '#9966cc'
+                      : entry.isReroll ? '#c9a84c' : '#4a7aaa',
+                  }}>
                     {title}
                   </span>
                   <span style={{ color: '#2a3a50', marginLeft: 'auto', fontSize: 9 }}>
                     {formatTime(entry.timestamp)}
                   </span>
                 </div>
-                <div style={s.histValues}>
-                  {formatHistoryValues(entry.values)}
-                </div>
+                {valStr && (
+                  <div style={s.histValues}>{valStr}</div>
+                )}
               </div>
             );
           })}
@@ -268,8 +319,12 @@ const s: Record<string, React.CSSProperties> = {
     backdropFilter: 'blur(14px)',
     fontFamily: font, zIndex: 50, overflowY: 'auto',
   },
+  topRow: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: 4,
+  },
   susRow: {
-    display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4,
+    display: 'flex', alignItems: 'center', gap: 4,
   },
   susLabel: {
     color: '#44cc88', fontSize: 9, letterSpacing: 2, fontWeight: 700,
@@ -281,6 +336,15 @@ const s: Record<string, React.CSSProperties> = {
   },
   susBtnActive: {
     background: '#1a3a20', border: '1px solid #44cc88',
+  },
+  undoBtn: {
+    fontFamily: font, background: '#1a1828', border: '1px solid #3a2a50',
+    borderRadius: 3, color: '#9966cc', padding: '2px 7px',
+    fontSize: 9, fontWeight: 700, cursor: 'pointer', letterSpacing: 0.5,
+  },
+  animStatus: {
+    color: '#4a8aaa', fontSize: 9, fontStyle: 'italic',
+    letterSpacing: 1, padding: '2px 0 4px',
   },
   sectionHead: {
     color: '#2a4a6a', fontSize: 9, letterSpacing: 3, fontWeight: 700,

@@ -35,7 +35,7 @@ const _mat  = new THREE.Matrix4();
 const _zero = new THREE.Matrix4().makeScale(0, 0, 0);
 
 function computeScale(n: number): number {
-  return Math.max(0.55, Math.min(1.5, 9 / Math.sqrt(Math.max(1, n))));
+  return Math.max(0.4, Math.min(0.85, 5.5 / Math.sqrt(Math.max(1, n))));
 }
 
 // ─── Props ────────────────────────────────────────────────────────────
@@ -228,18 +228,26 @@ function PhysicsDice({ count, geo, mat, dieColor }: {
   const rigidBodies = useRef<(RapierRigidBody | null)[]>([]);
   const throwApplied = useRef(false);
   const settleFrames = useRef(0);
+  const settleElapsed = useRef(0);
+
+  // Read throwParams from store so we can use them as initial spawn positions
+  const throwParams = useDiceStore(s => s.throwParams);
 
   useEffect(() => {
     throwApplied.current = false;
     settleFrames.current = 0;
+    settleElapsed.current = 0;
     mat.color.copy(DIE_COLOR_MAP[dieColor]);
   }, [dieColor, mat]);
 
-  useFrame(() => {
+  useFrame((_, dt) => {
     const store = useDiceStore.getState();
 
-    // Apply impulses once on ROLLING
+    // Apply impulses once on ROLLING — wait until all bodies are registered
     if (store.phase === 'ROLLING' && !throwApplied.current && store.throwParams) {
+      const allReady = rigidBodies.current.slice(0, count).every(b => b !== null);
+      if (!allReady) return;
+
       for (let i = 0; i < Math.min(count, store.throwParams.length); i++) {
         const body = rigidBodies.current[i];
         if (!body) continue;
@@ -252,12 +260,21 @@ function PhysicsDice({ count, geo, mat, dieColor }: {
         body.wakeUp();
       }
       throwApplied.current = true;
+      settleElapsed.current = 0;
       useDiceStore.setState({ phase: 'SETTLING' });
       return;
     }
 
     // Check for settle during SETTLING
     if (store.phase === 'SETTLING') {
+      settleElapsed.current += dt;
+
+      // Force-settle after timeout to prevent infinite bouncing
+      if (settleElapsed.current >= PHYSICS_CONFIG.settleTimeoutSeconds) {
+        store.onAllDiceSettled();
+        return;
+      }
+
       let allSettled = true;
       for (let i = 0; i < count; i++) {
         const body = rigidBodies.current[i];
@@ -270,7 +287,7 @@ function PhysicsDice({ count, geo, mat, dieColor }: {
 
       if (allSettled) {
         settleFrames.current++;
-        if (settleFrames.current > 10) {
+        if (settleFrames.current >= PHYSICS_CONFIG.settleFrameCount) {
           store.onAllDiceSettled();
         }
       } else {
@@ -283,21 +300,28 @@ function PhysicsDice({ count, geo, mat, dieColor }: {
 
   return (
     <>
-      {Array.from({ length: count }, (_, i) => (
-        <RigidBody
-          key={i}
-          ref={(el: RapierRigidBody | null) => { rigidBodies.current[i] = el; }}
-          position={[0, 10 + i * 0.1, -6]}
-          restitution={PHYSICS_CONFIG.restitution}
-          friction={PHYSICS_CONFIG.friction}
-          linearDamping={PHYSICS_CONFIG.linearDamping}
-          angularDamping={PHYSICS_CONFIG.angularDamping}
-          colliders="cuboid"
-          canSleep={false}
-        >
-          <mesh geometry={geo} material={mat} scale={[s, s, s]} castShadow receiveShadow />
-        </RigidBody>
-      ))}
+      {Array.from({ length: count }, (_, i) => {
+        // Use throwParams start positions so dice spawn spread out (not stacked)
+        const sp = throwParams?.[i]?.startPosition;
+        const initPos: [number, number, number] = sp
+          ? [sp.x, sp.y, sp.z]
+          : [((i % 10) - 4.5) * 1.6, 8 + Math.floor(i / 10) * 1.5, -6];
+        return (
+          <RigidBody
+            key={i}
+            ref={(el: RapierRigidBody | null) => { rigidBodies.current[i] = el; }}
+            position={initPos}
+            restitution={PHYSICS_CONFIG.restitution}
+            friction={PHYSICS_CONFIG.friction}
+            linearDamping={PHYSICS_CONFIG.linearDamping}
+            angularDamping={PHYSICS_CONFIG.angularDamping}
+            colliders="cuboid"
+            canSleep={false}
+          >
+            <mesh geometry={geo} material={mat} scale={[s, s, s]} castShadow receiveShadow />
+          </RigidBody>
+        );
+      })}
     </>
   );
 }

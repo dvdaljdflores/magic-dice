@@ -52,6 +52,8 @@ export interface RollHistoryEntry {
   color: DieColor;
   seed: string;
   isReroll: boolean;
+  /** Optional label for non-roll events (del, roll≤N, lethal, sus, undo) */
+  actionLabel?: string;
 }
 
 // ============================================================

@@ -10,44 +10,44 @@ export const PHYSICS_CONFIG = {
   gravity: [0, -50, 0] as const,
 
   /** Coefficient of restitution — moderate bounce */
-  restitution: 0.3,
+  restitution: 0.12,
 
   /** Surface friction for table contact */
   friction: 0.7,
 
-  /** Higher damping helps all dice settle, especially with many */
-  linearDamping: 0.5,
-  angularDamping: 0.55,
+  /** High damping — dice settle after 2-3 bounces */
+  linearDamping: 0.85,
+  angularDamping: 0.88,
 
   /** Settle detection thresholds */
   settleLinvelThreshold: 0.08,
   settleAngvelThreshold: 0.1,
 
   /** Force-settle after this many seconds to prevent infinite bounce */
-  settleTimeoutSeconds: 9,
+  settleTimeoutSeconds: 5,
 
   /** Frames of consecutive settling before triggering arrange */
-  settleFrameCount: 15,
+  settleFrameCount: 12,
 
   /** Speed of the arrange lerp animation (progress per second) */
   arrangeSpeed: 2.5,
 
   /** Throw height range (y-coordinate of start position) */
-  throwHeightMin: 6,
-  throwHeightMax: 10,
+  throwHeightMin: 2,
+  throwHeightMax: 5,
 
   /** Impulse magnitude ranges */
-  impulseVerticalMin: 8,
-  impulseVerticalMax: 15,
-  impulseHorizontalRange: 5,
+  impulseVerticalMin: 5,
+  impulseVerticalMax: 10,
+  impulseHorizontalRange: 1.5,
 
   /** Torque magnitude range (per axis) */
-  torqueRange: 15,
+  torqueRange: 12,
 
   /** Board geometry (must match DiceScene board dimensions) */
   boardWidth: 22,
   boardDepth: 16,
 
   /** Wall height for invisible boundaries */
-  wallHeight: 8,
+  wallHeight: 20,
 } as const;

@@ -13,11 +13,12 @@ import { useRef, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Physics, RigidBody, CuboidCollider } from '@react-three/rapier';
 import type { RapierRigidBody } from '@react-three/rapier';
+import { Text } from '@react-three/drei';
 import * as THREE from 'three';
 import type { DiceRollResult, GamePhase, DieColor } from '../core/types';
 import { createDiceGeometry } from '../rendering/DiceGeometry';
 import { createDiceMaterial, DIE_COLOR_MAP } from '../rendering/DiceMaterial';
-import { PREVIEW_QUATERNION } from '../core/DiceEngine';
+import { PREVIEW_QUATERNION, faceUpQuaternion } from '../core/DiceEngine';
 import { useDiceStore } from '../store/diceStore';
 import { isBodySettled } from '../physics/settleDetection';
 import { PHYSICS_CONFIG } from '../physics/constants';
@@ -58,7 +59,12 @@ export function DiceScene({
   const mat = useMemo(() => createDiceMaterial(), []);
   const lethalMat = useMemo(() => {
     const m = createDiceMaterial();
-    m.color.set(0.55, 0.08, 0.82);
+    m.color.setRGB(0.92, 0.68, 0.02); // vivid gold
+    return m;
+  }, []);
+  const sustainedMat = useMemo(() => {
+    const m = createDiceMaterial();
+    m.color.setRGB(0.0, 0.88, 0.95); // bright teal — distinct from all die colors
     return m;
   }, []);
 
@@ -95,15 +101,22 @@ export function DiceScene({
 
       {/* ARRANGING + ARRANGED: lerp to sorted positions */}
       {(gamePhase === 'ARRANGING' || gamePhase === 'ARRANGED') && (
-        <ArrangedDice
-          rollResult={rollResult}
-          lethalMask={lethalMask}
-          dieColor={dieColor}
-          geo={geo}
-          mat={mat}
-          lethalMat={lethalMat}
-          gamePhase={gamePhase}
-        />
+        <>
+          <ArrangedDice
+            rollResult={rollResult}
+            lethalMask={lethalMask}
+            dieColor={dieColor}
+            geo={geo}
+            mat={mat}
+            lethalMat={lethalMat}
+            sustainedMat={sustainedMat}
+          />
+          <RowLabels
+            rollResult={rollResult}
+            activeMask={activeMask}
+            lethalMask={lethalMask}
+          />
+        </>
       )}
     </>
   );
@@ -225,32 +238,68 @@ function PhysicsDice({ count, geo, mat, dieColor }: {
   mat: THREE.MeshStandardMaterial;
   dieColor: DieColor;
 }) {
-  const rigidBodies = useRef<(RapierRigidBody | null)[]>([]);
-  const throwApplied = useRef(false);
-  const settleFrames = useRef(0);
+  const rigidBodies   = useRef<(RapierRigidBody | null)[]>([]);
+  const throwApplied  = useRef(false);
+  const settleFrames  = useRef(0);
   const settleElapsed = useRef(0);
+  /**
+   * Per-die flag: once true, the rotation has been snapped to the correct face
+   * (faceUpQuaternion) during SETTLING. Prevents repeated snap calls and
+   * ensures the body's angular velocity can reach the settle threshold.
+   */
+  const rotSnapped    = useRef<boolean[]>([]);
 
-  // Read throwParams from store so we can use them as initial spawn positions
-  const throwParams = useDiceStore(s => s.throwParams);
+  const throwParams   = useDiceStore(s => s.throwParams);
+  const lockedTargets = useDiceStore(s => s.lockedTargets);
 
   useEffect(() => {
-    throwApplied.current = false;
-    settleFrames.current = 0;
+    throwApplied.current  = false;
+    settleFrames.current  = 0;
     settleElapsed.current = 0;
     mat.color.copy(DIE_COLOR_MAP[dieColor]);
   }, [dieColor, mat]);
 
   useFrame((_, dt) => {
-    const store = useDiceStore.getState();
+    const store  = useDiceStore.getState();
+    const locked = store.lockedTargets;
 
-    // Apply impulses once on ROLLING — wait until all bodies are registered
+    // ── Apply impulses once on ROLLING ─────────────────────────────────
+    // Wait until all RigidBody refs are registered before applying forces.
     if (store.phase === 'ROLLING' && !throwApplied.current && store.throwParams) {
       const allReady = rigidBodies.current.slice(0, count).every(b => b !== null);
       if (!allReady) return;
 
+      // Reset per-throw rotation-snap flags
+      rotSnapped.current = new Array(count).fill(false);
+
+      // FIX 1 — Set correct initial orientation for every die.
+      // Dynamic dice start with faceUpQuaternion(value) so the correct face is
+      // already visible the moment the die appears in the air.
+      // Locked dice keep their stored target orientation.
+      const rollResult = store.rollResult;
+      if (rollResult) {
+        for (let i = 0; i < count; i++) {
+          const body = rigidBodies.current[i];
+          if (!body) continue;
+          if (locked?.has(i)) {
+            const lt = locked.get(i)!;
+            body.setRotation(
+              { x: lt.quaternion[0], y: lt.quaternion[1], z: lt.quaternion[2], w: lt.quaternion[3] },
+              true,
+            );
+          } else {
+            // Face-up orientation (no yaw) — matches computeArrangeTargets exactly,
+            // so there is no visible rotation change when ARRANGING starts.
+            const fq = faceUpQuaternion(rollResult.values[i]);
+            body.setRotation({ x: fq.x, y: fq.y, z: fq.z, w: fq.w }, true);
+          }
+        }
+      }
+
       for (let i = 0; i < Math.min(count, store.throwParams.length); i++) {
         const body = rigidBodies.current[i];
         if (!body) continue;
+        if (locked?.has(i)) continue;  // locked dice stay in place — no impulse
         const tp = store.throwParams[i];
         body.setTranslation(tp.startPosition, true);
         body.setLinvel({ x: 0, y: 0, z: 0 }, true);
@@ -259,24 +308,54 @@ function PhysicsDice({ count, geo, mat, dieColor }: {
         body.applyTorqueImpulse(tp.torque, true);
         body.wakeUp();
       }
-      throwApplied.current = true;
+      throwApplied.current  = true;
       settleElapsed.current = 0;
       useDiceStore.setState({ phase: 'SETTLING' });
       return;
     }
 
-    // Check for settle during SETTLING
+    // ── Settle detection during SETTLING ───────────────────────────────
     if (store.phase === 'SETTLING') {
       settleElapsed.current += dt;
 
-      // Force-settle after timeout to prevent infinite bouncing
       if (settleElapsed.current >= PHYSICS_CONFIG.settleTimeoutSeconds) {
         store.onAllDiceSettled();
         return;
       }
 
+      const s = computeScale(count);
+
+      // FIX 2 — Pre-settle rotation snap.
+      // When a die is slowing down near the table surface, snap its rotation to
+      // the exact faceUpQuaternion and zero angular velocity. This guarantees the
+      // correct face is showing BEFORE the settle threshold is reached, so there
+      // is no visible orientation correction when the scene transitions to ARRANGING.
+      // Zeroing angvel here is safe: the die is already nearly still, and the low
+      // angular damping (0.88) means it would stop within the same timeframe anyway.
+      const rollResult = store.rollResult;
+      if (rollResult) {
+        for (let i = 0; i < count; i++) {
+          if (locked?.has(i) || rotSnapped.current[i]) continue;
+          const body = rigidBodies.current[i];
+          if (!body) continue;
+          const lv     = body.linvel();
+          const av     = body.angvel();
+          const linSpd = Math.sqrt(lv.x ** 2 + lv.y ** 2 + lv.z ** 2);
+          const angSpd = Math.sqrt(av.x ** 2 + av.y ** 2 + av.z ** 2);
+          // Snap only when die is on the table surface and slowing down.
+          // angSpd < 1.5 ensures we don't interrupt an active tumble visually.
+          if (linSpd < 0.5 && angSpd < 1.5 && body.translation().y < s * 1.5) {
+            const fq = faceUpQuaternion(rollResult.values[i]);
+            body.setRotation({ x: fq.x, y: fq.y, z: fq.z, w: fq.w }, true);
+            body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+            rotSnapped.current[i] = true;
+          }
+        }
+      }
+
       let allSettled = true;
       for (let i = 0; i < count; i++) {
+        if (locked?.has(i)) continue;  // locked dice are always considered settled
         const body = rigidBodies.current[i];
         if (!body) continue;
         if (!isBodySettled(body.linvel(), body.angvel())) {
@@ -301,22 +380,29 @@ function PhysicsDice({ count, geo, mat, dieColor }: {
   return (
     <>
       {Array.from({ length: count }, (_, i) => {
-        // Use throwParams start positions so dice spawn spread out (not stacked)
-        const sp = throwParams?.[i]?.startPosition;
-        const initPos: [number, number, number] = sp
-          ? [sp.x, sp.y, sp.z]
-          : [((i % 10) - 4.5) * 1.6, 8 + Math.floor(i / 10) * 1.5, -6];
+        const isLocked     = lockedTargets?.has(i) ?? false;
+        const lockedTarget = isLocked ? lockedTargets!.get(i)! : undefined;
+        const sp           = throwParams?.[i]?.startPosition;
+
+        const initPos: [number, number, number] = isLocked && lockedTarget
+          ? [lockedTarget.position[0], lockedTarget.position[1], lockedTarget.position[2]]
+          : sp
+            ? [sp.x, sp.y, sp.z]
+            : [((i % 10) - 4.5) * 1.6, 8 + Math.floor(i / 10) * 1.5, -6];
+
         return (
           <RigidBody
             key={i}
             ref={(el: RapierRigidBody | null) => { rigidBodies.current[i] = el; }}
             position={initPos}
+            type={isLocked ? 'fixed' : 'dynamic'}
             restitution={PHYSICS_CONFIG.restitution}
             friction={PHYSICS_CONFIG.friction}
             linearDamping={PHYSICS_CONFIG.linearDamping}
             angularDamping={PHYSICS_CONFIG.angularDamping}
             colliders="cuboid"
-            canSleep={false}
+            canSleep={isLocked}
+            ccd={!isLocked}
           >
             <mesh geometry={geo} material={mat} scale={[s, s, s]} castShadow receiveShadow />
           </RigidBody>
@@ -358,17 +444,18 @@ function PhysicsWalls() {
 
 // ─── Arranged Dice (ARRANGING + ARRANGED) ─────────────────────────────
 
-function ArrangedDice({ rollResult, lethalMask, dieColor, geo, mat, lethalMat, gamePhase }: {
+function ArrangedDice({ rollResult, lethalMask, dieColor, geo, mat, lethalMat, sustainedMat }: {
   rollResult: DiceRollResult | null;
   lethalMask: boolean[] | null;
   dieColor: DieColor;
   geo: THREE.BoxGeometry;
   mat: THREE.MeshStandardMaterial;
   lethalMat: THREE.MeshStandardMaterial;
-  gamePhase: GamePhase;
+  sustainedMat: THREE.MeshStandardMaterial;
 }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const lethalMeshRef = useRef<THREE.InstancedMesh>(null);
+  const sustainedMeshRef = useRef<THREE.InstancedMesh>(null);
 
   useEffect(() => {
     mat.color.copy(DIE_COLOR_MAP[dieColor]);
@@ -377,7 +464,8 @@ function ArrangedDice({ rollResult, lethalMask, dieColor, geo, mat, lethalMat, g
   useFrame((_, delta) => {
     const mesh = meshRef.current;
     const lethalMesh = lethalMeshRef.current;
-    if (!mesh || !lethalMesh || !rollResult) return;
+    const sustainedMesh = sustainedMeshRef.current;
+    if (!mesh || !lethalMesh || !sustainedMesh || !rollResult) return;
 
     const store = useDiceStore.getState();
 
@@ -385,7 +473,7 @@ function ArrangedDice({ rollResult, lethalMask, dieColor, geo, mat, lethalMat, g
       store.tickArrangeAnimation(delta);
     }
 
-    const { arrangeTargets, arrangeProgress } = useDiceStore.getState();
+    const { arrangeTargets, arrangeProgress, sustainedMask } = useDiceStore.getState();
     if (!arrangeTargets) return;
 
     const n = rollResult.count;
@@ -395,13 +483,15 @@ function ArrangedDice({ rollResult, lethalMask, dieColor, geo, mat, lethalMat, g
     for (let i = 0; i < MAX_DICE; i++) {
       mesh.setMatrixAt(i, _zero);
       lethalMesh.setMatrixAt(i, _zero);
+      sustainedMesh.setMatrixAt(i, _zero);
     }
 
     const t = easeOutCubic(arrangeProgress);
 
     for (const [dieIdx, target] of arrangeTargets) {
-      const isLethal = lethalMask?.[dieIdx] ?? false;
-      const targetMesh = isLethal ? lethalMesh : mesh;
+      const isLethal    = lethalMask?.[dieIdx] ?? false;
+      const isSustained = sustainedMask?.[dieIdx] ?? false;
+      const targetMesh  = isLethal ? lethalMesh : isSustained ? sustainedMesh : mesh;
 
       _p.set(target.position[0], target.position[1], target.position[2]);
 
@@ -417,8 +507,10 @@ function ArrangedDice({ rollResult, lethalMask, dieColor, geo, mat, lethalMat, g
 
     mesh.instanceMatrix.needsUpdate = true;
     lethalMesh.instanceMatrix.needsUpdate = true;
+    sustainedMesh.instanceMatrix.needsUpdate = true;
     mesh.count = MAX_DICE;
     lethalMesh.count = MAX_DICE;
+    sustainedMesh.count = MAX_DICE;
   });
 
   return (
@@ -437,6 +529,77 @@ function ArrangedDice({ rollResult, lethalMask, dieColor, geo, mat, lethalMat, g
         receiveShadow
         frustumCulled={false}
       />
+      <instancedMesh
+        ref={sustainedMeshRef}
+        args={[geo, sustainedMat, MAX_DICE]}
+        castShadow
+        receiveShadow
+        frustumCulled={false}
+      />
+    </>
+  );
+}
+
+// ─── Row Labels (ARRANGING + ARRANGED) ────────────────────────────────
+
+const LABEL_X = -(BOARD_W / 2) + 0.9;
+
+function RowLabels({ rollResult, activeMask, lethalMask }: {
+  rollResult: DiceRollResult | null;
+  activeMask: boolean[] | null;
+  lethalMask: boolean[] | null;
+}) {
+  const arrangeTargets = useDiceStore(s => s.arrangeTargets);
+  if (!arrangeTargets || !rollResult) return null;
+
+  const normalRowZ = new Map<number, number>();
+  const normalRowCount = new Map<number, number>();
+  let lethalCount = 0;
+
+  for (const [dieIdx, target] of arrangeTargets) {
+    if (activeMask && !activeMask[dieIdx]) continue;
+    const v = rollResult.values[dieIdx];
+    const isLethal = lethalMask?.[dieIdx] ?? false;
+    if (isLethal) {
+      lethalCount++;
+    } else {
+      if (!normalRowZ.has(v)) normalRowZ.set(v, target.position[2]);
+      normalRowCount.set(v, (normalRowCount.get(v) ?? 0) + 1);
+    }
+  }
+
+  return (
+    <>
+      {[1, 2, 3, 4, 5, 6].map(v => {
+        const z   = normalRowZ.get(v);
+        const cnt = normalRowCount.get(v);
+        if (z === undefined || !cnt) return null;
+        return (
+          <Text
+            key={v}
+            position={[LABEL_X, 0.12, z]}
+            rotation={[-Math.PI / 2, 0, 0]}
+            fontSize={0.42}
+            color="#0a0a08"
+            anchorX="center"
+            anchorY="middle"
+          >
+            {`${v} x${cnt}`}
+          </Text>
+        );
+      })}
+      {lethalCount > 0 && (
+        <Text
+          position={[0, 0.12, LETHAL_ZONE_Z]}
+          rotation={[-Math.PI / 2, 0, 0]}
+          fontSize={0.42}
+          color="#0a0a08"
+          anchorX="center"
+          anchorY="middle"
+        >
+          {`☠ x${lethalCount}`}
+        </Text>
+      )}
     </>
   );
 }

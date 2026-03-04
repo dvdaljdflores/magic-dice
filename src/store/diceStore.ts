@@ -21,6 +21,7 @@ interface UndoSnapshot {
   rollResult: DiceRollResult | null;
   activeMask: boolean[] | null;
   lethalMask: boolean[] | null;
+  sustainedMask: boolean[] | null;
   count: number;
 }
 
@@ -46,6 +47,14 @@ export interface DiceState {
   throwParams: ThrowParams[] | null;
   arrangeTargets: Map<number, ArrangeTarget> | null;
   arrangeProgress: number;
+  /** Dice that stay fixed during physics (lethal dice when re-throwing, or existing dice when adding). */
+  lockedTargets: Map<number, ArrangeTarget> | null;
+  /** Tracks which dice were added by Sustained Hits (shown in a distinct color). */
+  sustainedMask: boolean[] | null;
+
+  /** When false, throwDice/repeatThrow/addCount skip physics and go directly to ARRANGING. */
+  animEnabled: boolean;
+  setAnimEnabled: (v: boolean) => void;
 
   // --- Actions ---
   addCount: (n: number) => void;
@@ -85,40 +94,144 @@ export const useDiceStore = create<DiceState>((set, get) => ({
   throwParams: null,
   arrangeTargets: null,
   arrangeProgress: 0,
+  lockedTargets: null,
+  sustainedMask: null,
+  animEnabled: true,
 
-  // ── Add dice (additive, resets to PREVIEW) ──────────────────────────
+  // ── Add dice ─────────────────────────────────────────────────────────
+  // In ARRANGED: new dice fall with physics; existing dice stay locked.
+  // Otherwise: increments count and returns to PREVIEW.
 
   addCount: (n) => {
-    set(s => ({
-      count: Math.min(120, s.count + n),
-      phase: 'PREVIEW',
-      throwParams: null,
-      arrangeTargets: null,
-      arrangeProgress: 0,
-    }));
+    const { phase, rollResult, activeMask, lethalMask, sustainedMask, count, arrangeTargets, animEnabled } = get();
+
+    if (phase === 'ARRANGED' && rollResult && activeMask && arrangeTargets) {
+      const extra = Math.min(n, 120 - count);
+      if (extra <= 0) return;
+
+      const seed    = generateSeed();
+      const updated = addDice(rollResult, extra, seed);
+      const newCount      = updated.count;
+      const newActiveMask = [...activeMask, ...new Array(extra).fill(true)];
+      const newLethalMask = [...(lethalMask ?? []), ...new Array(extra).fill(false)];
+      const newSustainedMask = [...(sustainedMask ?? new Array(count).fill(false)), ...new Array(extra).fill(false)];
+
+      if (animEnabled) {
+        // Lock all current dice in place — only the new ones fall with physics
+        const locked = new Map(arrangeTargets);
+        const throwSeed  = generateSeed();
+        const throwParams = computeThrowParams(newCount, throwSeed);
+        set({
+          count: newCount,
+          rollResult: updated,
+          activeMask: newActiveMask,
+          lethalMask: newLethalMask,
+          sustainedMask: newSustainedMask,
+          throwParams,
+          lockedTargets: locked,
+          arrangeTargets: null,
+          arrangeProgress: 0,
+          phase: 'ROLLING',
+        });
+      } else {
+        // Skip physics — position dice instantly (no drop animation).
+        const scale    = computeScale(newCount);
+        const hasLethal = newLethalMask.some(Boolean);
+        const targets  = computeArrangeTargets(updated.values, newActiveMask, newLethalMask, scale, hasLethal);
+        set({
+          count: newCount,
+          rollResult: updated,
+          activeMask: newActiveMask,
+          lethalMask: newLethalMask,
+          sustainedMask: newSustainedMask,
+          throwParams: null,
+          lockedTargets: null,
+          arrangeTargets: targets,
+          arrangeProgress: 1,
+          phase: 'ARRANGED',
+        });
+      }
+    } else {
+      set(s => ({
+        count: Math.min(120, s.count + n),
+        phase: 'PREVIEW',
+        throwParams: null,
+        arrangeTargets: null,
+        arrangeProgress: 0,
+        lockedTargets: null,
+      }));
+    }
   },
 
   // ── Throw dice ──────────────────────────────────────────────────────
+  // When lethal dice are present, they stay locked; only non-lethal dice fly.
 
   throwDice: () => {
-    const { count, dieColor, currentTurn, currentPhase } = get();
+    const { count, dieColor, currentTurn, currentPhase, phase, rollResult, lethalMask, arrangeTargets, animEnabled } = get();
     if (count === 0) return;
 
     const seed = generateSeed();
-    const result = rollDice(count, seed);
-    const throwSeed = generateSeed();
-    const throwParams = computeThrowParams(count, throwSeed);
+    let result: DiceRollResult;
+    let newLethalMask: boolean[];
+    let locked: Map<number, ArrangeTarget> | null = null;
 
-    set({
-      rollResult: result,
-      activeMask: new Array(count).fill(true),
-      lethalMask: new Array(count).fill(false),
-      throwParams,
-      arrangeTargets: null,
-      arrangeProgress: 0,
-      phase: 'ROLLING',
-      undoStack: [],
-    });
+    const hasLockedDice = phase === 'ARRANGED'
+      && rollResult != null
+      && lethalMask != null
+      && lethalMask.some(Boolean)
+      && arrangeTargets != null;
+
+    if (hasLockedDice) {
+      // Save lethal positions; re-roll only non-lethal dice
+      locked = new Map<number, ArrangeTarget>();
+      for (const [idx, target] of arrangeTargets!) {
+        if (lethalMask![idx]) locked.set(idx, target);
+      }
+      const nonLethalIndices = Array.from({ length: count }, (_, i) => i)
+        .filter(i => !(lethalMask![i] ?? false));
+      result = rollSpecificDice(rollResult!, nonLethalIndices, seed);
+      newLethalMask = [...lethalMask!];
+    } else {
+      result = rollDice(count, seed);
+      newLethalMask = new Array(count).fill(false);
+    }
+
+    const newActiveMask  = new Array(count).fill(true);
+    const newSustained   = new Array(count).fill(false);
+
+    if (animEnabled) {
+      const throwSeed  = generateSeed();
+      const throwParams = computeThrowParams(count, throwSeed);
+      set({
+        rollResult: result,
+        activeMask: newActiveMask,
+        lethalMask: newLethalMask,
+        sustainedMask: newSustained,
+        throwParams,
+        lockedTargets: locked,
+        arrangeTargets: null,
+        arrangeProgress: 0,
+        phase: 'ROLLING',
+        undoStack: [],
+      });
+    } else {
+      // Skip physics — position dice instantly (no drop animation).
+      const scale    = computeScale(count);
+      const hasLethal = newLethalMask.some(Boolean);
+      const targets  = computeArrangeTargets(result.values, newActiveMask, newLethalMask, scale, hasLethal);
+      set({
+        rollResult: result,
+        activeMask: newActiveMask,
+        lethalMask: newLethalMask,
+        sustainedMask: newSustained,
+        throwParams: null,
+        lockedTargets: null,
+        arrangeTargets: targets,
+        arrangeProgress: 1,
+        phase: 'ARRANGED',
+        undoStack: [],
+      });
+    }
 
     set(s => ({
       history: [...s.history, {
@@ -138,24 +251,45 @@ export const useDiceStore = create<DiceState>((set, get) => ({
   // ── Repeat throw ────────────────────────────────────────────────────
 
   repeatThrow: () => {
-    const { rollResult, count, dieColor, currentTurn, currentPhase } = get();
+    const { rollResult, count, dieColor, currentTurn, currentPhase, animEnabled } = get();
     if (!rollResult || count === 0) return;
 
     const seed = generateSeed();
     const result = rollDice(count, seed);
-    const throwSeed = generateSeed();
-    const throwParams = computeThrowParams(count, throwSeed);
+    const newActiveMask = new Array(count).fill(true);
+    const newLethalMask = new Array(count).fill(false);
+    const newSustained  = new Array(count).fill(false);
 
-    set({
-      rollResult: result,
-      activeMask: new Array(count).fill(true),
-      lethalMask: new Array(count).fill(false),
-      throwParams,
-      arrangeTargets: null,
-      arrangeProgress: 0,
-      phase: 'ROLLING',
-      undoStack: [],
-    });
+    if (animEnabled) {
+      const throwSeed   = generateSeed();
+      const throwParams = computeThrowParams(count, throwSeed);
+      set({
+        rollResult: result,
+        activeMask: newActiveMask,
+        lethalMask: newLethalMask,
+        sustainedMask: newSustained,
+        throwParams,
+        arrangeTargets: null,
+        arrangeProgress: 0,
+        phase: 'ROLLING',
+        undoStack: [],
+      });
+    } else {
+      // Skip physics — position dice instantly (no drop animation).
+      const scale   = computeScale(count);
+      const targets = computeArrangeTargets(result.values, newActiveMask, newLethalMask, scale, false);
+      set({
+        rollResult: result,
+        activeMask: newActiveMask,
+        lethalMask: newLethalMask,
+        sustainedMask: newSustained,
+        throwParams: null,
+        arrangeTargets: targets,
+        arrangeProgress: 1,
+        phase: 'ARRANGED',
+        undoStack: [],
+      });
+    }
 
     set(s => ({
       history: [...s.history, {
@@ -184,6 +318,7 @@ export const useDiceStore = create<DiceState>((set, get) => ({
         rollResult: s.rollResult,
         activeMask: s.activeMask ? [...s.activeMask] : null,
         lethalMask: s.lethalMask ? [...s.lethalMask] : null,
+        sustainedMask: s.sustainedMask ? [...s.sustainedMask] : null,
         count: s.count,
       }],
     }));
@@ -208,12 +343,15 @@ export const useDiceStore = create<DiceState>((set, get) => ({
       rollResult.values, newActiveMask, newLethalMask, scale, hasLethal,
     );
 
+    // Go straight to ARRANGED — no drop animation for layout-only changes.
+    // The Y-drop animation (arrangeProgress 0→1) is reserved for the
+    // physics-to-ARRANGING transition only (onAllDiceSettled).
     set({
       activeMask: newActiveMask,
       lethalMask: newLethalMask,
       arrangeTargets: targets,
-      arrangeProgress: 0,
-      phase: 'ARRANGING',
+      arrangeProgress: 1,
+      phase: 'ARRANGED',
     });
 
     if (deletedValues.length > 0) {
@@ -254,6 +392,7 @@ export const useDiceStore = create<DiceState>((set, get) => ({
         rollResult: s.rollResult,
         activeMask: s.activeMask ? [...s.activeMask] : null,
         lethalMask: s.lethalMask ? [...s.lethalMask] : null,
+        sustainedMask: s.sustainedMask ? [...s.sustainedMask] : null,
         count: s.count,
       }],
     }));
@@ -267,11 +406,12 @@ export const useDiceStore = create<DiceState>((set, get) => ({
       updated.values, activeMask, lethalMask ?? new Array(updated.count).fill(false), scale, hasLethal,
     );
 
+    // No drop animation for reroll — go straight to ARRANGED.
     set({
       rollResult: updated,
       arrangeTargets: targets,
-      arrangeProgress: 0,
-      phase: 'ARRANGING',
+      arrangeProgress: 1,
+      phase: 'ARRANGED',
     });
 
     set(s => ({
@@ -310,6 +450,7 @@ export const useDiceStore = create<DiceState>((set, get) => ({
         rollResult: s.rollResult,
         activeMask: s.activeMask ? [...s.activeMask] : null,
         lethalMask: s.lethalMask ? [...s.lethalMask] : null,
+        sustainedMask: s.sustainedMask ? [...s.sustainedMask] : null,
         count: s.count,
       }],
     }));
@@ -326,11 +467,12 @@ export const useDiceStore = create<DiceState>((set, get) => ({
       rollResult.values, activeMask, updatedLethalMask, scale, hasLethal,
     );
 
+    // No drop animation for lethal toggle — go straight to ARRANGED.
     set({
       lethalMask: updatedLethalMask,
       arrangeTargets: targets,
-      arrangeProgress: 0,
-      phase: 'ARRANGING',
+      arrangeProgress: 1,
+      phase: 'ARRANGED',
     });
 
     set(s => ({
@@ -352,7 +494,7 @@ export const useDiceStore = create<DiceState>((set, get) => ({
   // ── Sustained Hits: add N × sustainedX new dice, no physics re-throw ─
 
   sustainedHits: (faceValue) => {
-    const { rollResult, activeMask, lethalMask, sustainedX, count, dieColor, currentTurn, currentPhase } = get();
+    const { rollResult, activeMask, lethalMask, sustainedMask, sustainedX, count, dieColor, currentTurn, currentPhase } = get();
     if (!rollResult || !activeMask) return;
 
     let n = 0;
@@ -372,6 +514,7 @@ export const useDiceStore = create<DiceState>((set, get) => ({
         rollResult: s.rollResult,
         activeMask: s.activeMask ? [...s.activeMask] : null,
         lethalMask: s.lethalMask ? [...s.lethalMask] : null,
+        sustainedMask: s.sustainedMask ? [...s.sustainedMask] : null,
         count: s.count,
       }],
     }));
@@ -381,6 +524,8 @@ export const useDiceStore = create<DiceState>((set, get) => ({
     const newCount = updated.count;
     const newActiveMask = [...(activeMask ?? []), ...new Array(extra).fill(true)];
     const newLethalMask = [...(lethalMask ?? []), ...new Array(extra).fill(false)];
+    // Mark the newly added dice as sustained
+    const newSustainedMask = [...(sustainedMask ?? new Array(count).fill(false)), ...new Array(extra).fill(true)];
 
     const scale = computeScale(newCount);
     const hasLethal = newLethalMask.some(Boolean);
@@ -388,14 +533,16 @@ export const useDiceStore = create<DiceState>((set, get) => ({
       updated.values, newActiveMask, newLethalMask, scale, hasLethal,
     );
 
+    // No drop animation for sustained hits — go straight to ARRANGED.
     set({
       rollResult: updated,
       count: newCount,
       activeMask: newActiveMask,
       lethalMask: newLethalMask,
+      sustainedMask: newSustainedMask,
       arrangeTargets: targets,
-      arrangeProgress: 0,
-      phase: 'ARRANGING',
+      arrangeProgress: 1,
+      phase: 'ARRANGED',
     });
 
     set(s => ({
@@ -432,15 +579,17 @@ export const useDiceStore = create<DiceState>((set, get) => ({
       );
     }
 
+    // No drop animation for undo — go straight to ARRANGED (or PREVIEW).
     set({
       rollResult: last.rollResult,
       activeMask: last.activeMask,
       lethalMask: last.lethalMask,
+      sustainedMask: last.sustainedMask,
       count: last.count,
       undoStack: newStack,
       arrangeTargets: targets,
-      arrangeProgress: 0,
-      phase: targets ? 'ARRANGING' : 'PREVIEW',
+      arrangeProgress: targets ? 1 : 0,
+      phase: targets ? 'ARRANGED' : 'PREVIEW',
     });
 
     set(s => ({
@@ -468,9 +617,11 @@ export const useDiceStore = create<DiceState>((set, get) => ({
       rollResult: null,
       activeMask: null,
       lethalMask: null,
+      sustainedMask: null,
       throwParams: null,
       arrangeTargets: null,
       arrangeProgress: 0,
+      lockedTargets: null,
       undoStack: [],
     });
   },
@@ -481,6 +632,7 @@ export const useDiceStore = create<DiceState>((set, get) => ({
   setTurn: (t) => set({ currentTurn: t }),
   setWarhPhase: (p) => set({ currentPhase: p }),
   setSustainedX: (x) => set({ sustainedX: x }),
+  setAnimEnabled: (v) => set({ animEnabled: v }),
 
   // ── Physics callbacks ───────────────────────────────────────────────
 
@@ -498,6 +650,7 @@ export const useDiceStore = create<DiceState>((set, get) => ({
       phase: 'ARRANGING',
       arrangeTargets: targets,
       arrangeProgress: 0,
+      lockedTargets: null,
     });
   },
 

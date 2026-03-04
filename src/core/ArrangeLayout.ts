@@ -2,7 +2,8 @@
  * LAYER 1 — Arrange Layout Calculator
  *
  * Pure function that computes target positions and quaternions for the
- * ARRANGED display (dice sorted by face value in rows).
+ * ARRANGED display. Dice are left-aligned per face-value row, stacking
+ * in Y when more than MAX_PER_STACK share the same value.
  */
 
 import type { ArrangeTarget } from './types';
@@ -15,10 +16,13 @@ const BOARD_D       = 16;
 const LETHAL_ZONE_Z = 6.0;
 const NORMAL_Z_MIN  = -7.0;
 const NORMAL_Z_MAX  =  1.5;
+const MAX_PER_STACK = 6;   // dice per horizontal slot before stacking in Y
+const LABEL_SPACE   = 2.0; // x units reserved on the left for row labels
 
 /**
  * Compute arranged positions and quaternions for each active die.
- * Rows with more dice than fit on the board wrap into sub-rows.
+ * Dice in each row are left-aligned; when a row exceeds MAX_PER_STACK
+ * the extra dice stack on top (Y axis) instead of wrapping to a new row.
  */
 export function computeArrangeTargets(
   values: number[],
@@ -30,11 +34,10 @@ export function computeArrangeTargets(
   const targets = new Map<number, ArrangeTarget>();
   if (values.length === 0) return targets;
 
-  const colSp = scale * COL_SP;
-  const rowSp = scale * ROW_SP;
-
-  // Max dice per row before wrapping (leave 1 scale margin each side)
-  const maxPerRow = Math.max(1, Math.floor((BOARD_W - scale) / colSp));
+  const colSp  = scale * COL_SP;
+  const rowSp  = scale * ROW_SP;
+  const stackH = scale * 0.85;                      // height per stack level
+  const leftX  = -(BOARD_W / 2) + LABEL_SPACE + scale / 2; // first die x
 
   // Group active dice by face value, split normal vs lethal
   const normalGroups: Record<number, number[]> = {};
@@ -43,74 +46,60 @@ export function computeArrangeTargets(
   for (let i = 0; i < values.length; i++) {
     if (!activeMask[i]) continue;
     const v = values[i];
-    const isLethal = lethalMask[i] ?? false;
-    const target = isLethal ? lethalGroups : normalGroups;
-    if (!target[v]) target[v] = [];
-    target[v].push(i);
+    const group = (lethalMask[i] ?? false) ? lethalGroups : normalGroups;
+    if (!group[v]) group[v] = [];
+    group[v].push(i);
   }
 
-  // ── Normal dice — rows by face value, with sub-row wrapping ──────────
+  // ── Normal dice — one z-row per face value, Y-stacking within ────────
   const normalVals = [1, 2, 3, 4, 5, 6].filter(v => (normalGroups[v]?.length ?? 0) > 0);
   if (normalVals.length > 0) {
-    // Count total z-slots needed (each face value may use multiple sub-rows)
-    const slotsPerVal = normalVals.map(v => Math.ceil(normalGroups[v].length / maxPerRow));
-    const totalSlots  = slotsPerVal.reduce((a, b) => a + b, 0);
-
+    const totalRows = normalVals.length;
     const zMin  = hasLethal ? NORMAL_Z_MIN : -(BOARD_D / 2 - scale);
     const zMax  = hasLethal ? NORMAL_Z_MAX :  (BOARD_D / 2 - scale);
     const avail = zMax - zMin;
-    const span  = (totalSlots - 1) * rowSp;
+    const span  = (totalRows - 1) * rowSp;
     let   z     = zMin + Math.max(0, (avail - span) / 2);
 
-    for (let rowIdx = 0; rowIdx < normalVals.length; rowIdx++) {
-      const v    = normalVals[rowIdx];
-      const row  = normalGroups[v];
-      const q    = faceUpQuaternion(v);
-      const slots = slotsPerVal[rowIdx];
+    for (const v of normalVals) {
+      const row = normalGroups[v];
+      const q   = faceUpQuaternion(v);
 
-      for (let sub = 0; sub < slots; sub++) {
-        const start = sub * maxPerRow;
-        const slice = row.slice(start, start + maxPerRow);
-        const lineStartX = -((slice.length - 1) * colSp) / 2;
-
-        for (let colIdx = 0; colIdx < slice.length; colIdx++) {
-          const dieIdx = slice[colIdx];
-          targets.set(dieIdx, {
-            position: [lineStartX + colIdx * colSp, scale / 2 + 0.01, z],
-            quaternion: [q.x, q.y, q.z, q.w],
-          });
-        }
-
-        z += rowSp;
+      for (let k = 0; k < row.length; k++) {
+        const col      = k % MAX_PER_STACK;
+        const stackIdx = Math.floor(k / MAX_PER_STACK);
+        targets.set(row[k], {
+          position: [leftX + col * colSp, scale / 2 + 0.01 + stackIdx * stackH, z],
+          quaternion: [q.x, q.y, q.z, q.w],
+        });
       }
+
+      z += rowSp;
     }
   }
 
-  // ── Lethal dice — rows at LETHAL_ZONE_Z, also with wrapping ──────────
+  // ── Lethal dice — at LETHAL_ZONE_Z, centered + Y-stacking ───────────
   const lethalAll: { dieIdx: number; v: number }[] = [];
   for (const v of [1, 2, 3, 4, 5, 6]) {
     for (const dieIdx of lethalGroups[v] ?? []) {
       lethalAll.push({ dieIdx, v });
     }
   }
+
   if (lethalAll.length > 0) {
-    const slots   = Math.ceil(lethalAll.length / maxPerRow);
-    let   lz      = LETHAL_ZONE_Z - ((slots - 1) * rowSp) / 2;
+    // Center the group: first-column center at -(cols-1)*colSp/2
+    const lethalCols   = Math.min(lethalAll.length, MAX_PER_STACK);
+    const lethalStartX = -(lethalCols - 1) * colSp / 2;
 
-    for (let sub = 0; sub < slots; sub++) {
-      const start = sub * maxPerRow;
-      const slice = lethalAll.slice(start, start + maxPerRow);
-      const lineStartX = -((slice.length - 1) * colSp) / 2;
-
-      for (let colIdx = 0; colIdx < slice.length; colIdx++) {
-        const { dieIdx, v } = slice[colIdx];
-        const q = faceUpQuaternion(v);
-        targets.set(dieIdx, {
-          position: [lineStartX + colIdx * colSp, scale / 2 + 0.01, lz],
-          quaternion: [q.x, q.y, q.z, q.w],
-        });
-      }
-      lz += rowSp;
+    for (let k = 0; k < lethalAll.length; k++) {
+      const col      = k % MAX_PER_STACK;
+      const stackIdx = Math.floor(k / MAX_PER_STACK);
+      const { dieIdx, v } = lethalAll[k];
+      const q = faceUpQuaternion(v);
+      targets.set(dieIdx, {
+        position: [lethalStartX + col * colSp, scale / 2 + 0.01 + stackIdx * stackH, LETHAL_ZONE_Z],
+        quaternion: [q.x, q.y, q.z, q.w],
+      });
     }
   }
 

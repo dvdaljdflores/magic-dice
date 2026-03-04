@@ -67,8 +67,12 @@ export function createDiceMaterial(): THREE.MeshStandardMaterial {
 }
 
 export const DIE_COLOR_MAP: Record<DieColor, THREE.Color> = {
-  white: new THREE.Color(0.95, 0.95, 0.95),
-  red:   new THREE.Color(0.92, 0.22, 0.22),
-  blue:  new THREE.Color(0.22, 0.35, 0.95),
-  green: new THREE.Color(0.15, 0.85, 0.25),
+  white:  new THREE.Color(0.95, 0.95, 0.95),
+  red:    new THREE.Color(0.92, 0.22, 0.22),
+  blue:   new THREE.Color(0.22, 0.35, 0.95),
+  green:  new THREE.Color(0.15, 0.85, 0.25),
+  yellow: new THREE.Color(0.95, 0.88, 0.10),
+  orange: new THREE.Color(0.95, 0.48, 0.08),
+  purple: new THREE.Color(0.60, 0.15, 0.90),
+  black:  new THREE.Color(0.12, 0.12, 0.14),
 };

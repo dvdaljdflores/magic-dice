@@ -23,6 +23,8 @@ interface UIControlsProps {
   onThrow: () => void;
   onRepeat: () => void;
   onReset: () => void;
+  animEnabled: boolean;
+  onAnimEnabledChange: (v: boolean) => void;
 }
 
 const ADD_PRESETS = [1, 2, 5, 10, 25];
@@ -30,10 +32,14 @@ const TURNS       = [1, 2, 3, 4, 5];
 const PHASES      = Object.keys(WARH_PHASE_LABEL) as WarhPhase[];
 
 const COLOR_SWATCHES: { id: DieColor; hex: string; label: string }[] = [
-  { id: 'white', hex: '#e8e8e8', label: 'Blanco' },
-  { id: 'blue',  hex: '#2a7a8a', label: 'Azul'   },
-  { id: 'red',   hex: '#c03020', label: 'Rojo'   },
-  { id: 'green', hex: '#20a040', label: 'Verde'  },
+  { id: 'white',  hex: '#e8e8e8', label: 'Blanco'   },
+  { id: 'blue',   hex: '#2a7a8a', label: 'Azul'     },
+  { id: 'red',    hex: '#c03020', label: 'Rojo'     },
+  { id: 'green',  hex: '#20a040', label: 'Verde'    },
+  { id: 'yellow', hex: '#c9a800', label: 'Amarillo' },
+  { id: 'orange', hex: '#c05010', label: 'Naranja'  },
+  { id: 'purple', hex: '#8030c0', label: 'Morado'   },
+  { id: 'black',  hex: '#1a1a20', label: 'Negro'    },
 ];
 
 const font = "'Courier New', Courier, monospace";
@@ -44,6 +50,7 @@ export function UIControls({
   currentTurn, onTurnChange,
   currentPhase, onPhaseChange,
   gamePhase, onThrow, onRepeat, onReset,
+  animEnabled, onAnimEnabledChange,
 }: UIControlsProps) {
   // Disable actions during physics animation phases
   const busy = gamePhase === 'ROLLING' || gamePhase === 'SETTLING' || gamePhase === 'ARRANGING';
@@ -102,6 +109,15 @@ export function UIControls({
         </div>
 
         <div style={{ flex: 1 }} />
+
+        {/* FX toggle */}
+        <button
+          style={{ ...s.fxBtn, ...(animEnabled ? s.fxOn : s.fxOff) }}
+          onClick={() => onAnimEnabledChange(!animEnabled)}
+          title={animEnabled ? 'Desactivar animación de rebote (modo rápido)' : 'Activar animación de rebote'}
+        >
+          ⚙ FX {animEnabled ? 'ON' : 'OFF'}
+        </button>
 
         {/* Repetir */}
         <button
@@ -305,5 +321,25 @@ const s: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     letterSpacing: 1,
     fontWeight: 700,
+  },
+  fxBtn: {
+    fontFamily: font,
+    borderRadius: 4,
+    padding: '3px 10px',
+    fontSize: 10,
+    cursor: 'pointer',
+    letterSpacing: 1,
+    fontWeight: 700,
+    transition: 'all 0.15s',
+  },
+  fxOn: {
+    background: '#001a1a',
+    border: '1px solid #00aabb',
+    color: '#00ccdd',
+  },
+  fxOff: {
+    background: '#1a1a1a',
+    border: '1px solid #333',
+    color: '#555',
   },
 };

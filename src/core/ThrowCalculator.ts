@@ -71,10 +71,14 @@ export function computeThrowParams(count: number, seed: string): ThrowParams[] {
     const ix = lerp(rng, -impulseHorizontalRange, impulseHorizontalRange);
     const iz = lerp(rng, 2, 8); // forward toward board center
 
-    // Torque: random spin on all 3 axes
-    const tx = lerp(rng, -torqueRange, torqueRange);
+    // Torque: primary Y-axis (yaw) spin + small X/Z wobble.
+    // Each die is initialised with faceUpQuaternion(value) so the correct face
+    // is already pointing up before any torque is applied. Yaw rotation (Y axis)
+    // does NOT change which face is up, so the correct face stays visible
+    // throughout the throw. X/Z are limited to 25 % of range for visual wobble only.
     const ty = lerp(rng, -torqueRange, torqueRange);
-    const tz = lerp(rng, -torqueRange, torqueRange);
+    const tx = lerp(rng, -torqueRange * 0.25, torqueRange * 0.25);
+    const tz = lerp(rng, -torqueRange * 0.25, torqueRange * 0.25);
 
     params[i] = {
       startPosition: { x, y, z },

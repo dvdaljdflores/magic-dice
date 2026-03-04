@@ -10,6 +10,7 @@
 
 'use client';
 
+import { useState } from 'react';
 import type {
   DiceRollResult, DieColor, RollHistoryEntry, WarhPhase, GamePhase, SustainedX,
 } from '../core/types';
@@ -34,6 +35,7 @@ interface ResultsPanelProps {
 
 const COLOR_HEX: Record<DieColor, string> = {
   white: '#e8e8e8', red: '#e05040', blue: '#4488cc', green: '#40c060',
+  yellow: '#d4b800', orange: '#cc5510', purple: '#8830c0', black: '#303038',
 };
 
 const FACES = [1, 2, 3, 4, 5, 6];
@@ -74,6 +76,8 @@ export function ResultsPanel({
   onDelete, onReroll, onSustainedHits, onToggleLethal,
   onUndo, canUndo,
 }: ResultsPanelProps) {
+  const [modalEntry, setModalEntry] = useState<RollHistoryEntry | null>(null);
+
   const dipColor   = COLOR_HEX[dieColor];
   const hasResult  = rollResult !== null;
   const inArranged = gamePhase === 'ARRANGED';
@@ -267,14 +271,19 @@ export function ResultsPanel({
       ) : (
         <div style={s.histList}>
           {[...history].reverse().map(entry => {
-            const pLabel = phaseLabel(entry.phase);
+            const pLabel   = phaseLabel(entry.phase);
             const isAction = !!entry.actionLabel;
-            const title = isAction
+            const title    = isAction
               ? entry.actionLabel!
               : `Turno ${entry.turn}${pLabel ? ` (${pLabel})` : ''}${entry.isReroll ? ' · rep.' : ''}`;
-            const valStr = formatHistoryValues(entry.values);
+            const valStr   = formatHistoryValues(entry.values);
+
             return (
-              <div key={entry.id} style={s.histBlock}>
+              <div
+                key={entry.id}
+                style={{ ...s.histBlock, cursor: 'pointer' }}
+                onClick={() => setModalEntry(entry)}
+              >
                 <div style={s.histTitle}>
                   <span style={histDotStyle(COLOR_HEX[entry.color])} />
                   <span style={{
@@ -291,11 +300,58 @@ export function ResultsPanel({
                 {valStr && (
                   <div style={s.histValues}>{valStr}</div>
                 )}
+                {entry.diceCount > 0 && (
+                  <div style={{ color: '#2a4060', fontSize: 8, paddingLeft: 11 }}>
+                    {entry.diceCount} dado{entry.diceCount !== 1 ? 's' : ''}
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
       )}
+
+      {/* ── History modal ─────────────────────────────────────────────── */}
+      {modalEntry && (() => {
+        const pLabel   = phaseLabel(modalEntry.phase);
+        const isAction = !!modalEntry.actionLabel;
+        const title    = isAction
+          ? modalEntry.actionLabel!
+          : `Turno ${modalEntry.turn}${pLabel ? ` · ${pLabel}` : ''}${modalEntry.isReroll ? ' · Repetida' : ''}`;
+        const counts: Record<number, number> = {};
+        for (const v of modalEntry.values) counts[v] = (counts[v] ?? 0) + 1;
+
+        return (
+          <div style={s.modalOverlay} onClick={() => setModalEntry(null)}>
+            <div style={s.modalCard} onClick={e => e.stopPropagation()}>
+              <button style={s.modalClose} onClick={() => setModalEntry(null)}>✕</button>
+              <div style={s.modalHeader}>
+                <span style={histDotStyle(COLOR_HEX[modalEntry.color])} />
+                <span style={{
+                  color: isAction ? '#9966cc' : modalEntry.isReroll ? '#c9a84c' : '#4a7aaa',
+                  fontSize: 14, fontWeight: 700,
+                }}>
+                  {title}
+                </span>
+              </div>
+              <div style={s.modalTime}>{formatTime(modalEntry.timestamp)}</div>
+              <div style={s.modalGrid}>
+                {[1,2,3,4,5,6].filter(v => counts[v]).map(v => (
+                  <div key={v} style={s.modalFaceBox}>
+                    <span style={s.modalEmoji}>{faceEmoji(v)}</span>
+                    <span style={s.modalFaceCount}>×{counts[v]}</span>
+                  </div>
+                ))}
+              </div>
+              {modalEntry.diceCount > 0 && (
+                <div style={s.modalTotal}>
+                  {modalEntry.diceCount} dado{modalEntry.diceCount !== 1 ? 's' : ''}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -398,5 +454,54 @@ const s: Record<string, React.CSSProperties> = {
   histValues: {
     color: '#3a5a7a', fontSize: 9, lineHeight: 1.4,
     paddingLeft: 11, wordBreak: 'break-word' as const,
+  },
+  modalOverlay: {
+    position: 'fixed', inset: 0,
+    background: 'rgba(0,0,0,0.72)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    zIndex: 500, backdropFilter: 'blur(4px)',
+  },
+  modalCard: {
+    background: 'rgba(6, 10, 22, 0.98)',
+    border: '1px solid #1a3a5a',
+    borderRadius: 8,
+    padding: '24px 28px',
+    minWidth: 300, maxWidth: 420,
+    fontFamily: font,
+    boxShadow: '0 8px 40px rgba(0,0,0,0.8)',
+    position: 'relative',
+    display: 'flex', flexDirection: 'column', gap: 12,
+  },
+  modalClose: {
+    position: 'absolute', top: 10, right: 12,
+    background: 'none', border: 'none',
+    color: '#3a5a7a', fontSize: 16, cursor: 'pointer',
+    fontFamily: font, lineHeight: 1,
+  },
+  modalHeader: {
+    display: 'flex', alignItems: 'center', gap: 8,
+  },
+  modalTime: {
+    color: '#2a4060', fontSize: 11, letterSpacing: 1,
+  },
+  modalGrid: {
+    display: 'flex', flexWrap: 'wrap' as const, gap: 10,
+    marginTop: 4,
+  },
+  modalFaceBox: {
+    display: 'flex', flexDirection: 'column', alignItems: 'center',
+    background: '#0d1a30', borderRadius: 6,
+    padding: '10px 14px', gap: 4,
+    border: '1px solid #1a3a5a',
+  },
+  modalEmoji: {
+    fontSize: 36, lineHeight: 1,
+  },
+  modalFaceCount: {
+    color: '#c9a84c', fontSize: 18, fontWeight: 700,
+  },
+  modalTotal: {
+    color: '#2a4060', fontSize: 11, letterSpacing: 1,
+    borderTop: '1px solid #0e2040', paddingTop: 8,
   },
 };

@@ -45,8 +45,10 @@ export default function WarhammerBoard() {
   const setDieColor   = useDiceStore(s => s.setDieColor);
   const setTurn       = useDiceStore(s => s.setTurn);
   const setWarhPhase  = useDiceStore(s => s.setWarhPhase);
-  const setSustainedX = useDiceStore(s => s.setSustainedX);
-  const undo          = useDiceStore(s => s.undo);
+  const setSustainedX   = useDiceStore(s => s.setSustainedX);
+  const undo            = useDiceStore(s => s.undo);
+  const animEnabled     = useDiceStore(s => s.animEnabled);
+  const setAnimEnabled  = useDiceStore(s => s.setAnimEnabled);
 
   const canUndo = undoStack.length > 0 && phase !== 'ROLLING' && phase !== 'SETTLING';
 
@@ -94,6 +96,8 @@ export default function WarhammerBoard() {
         onThrow={throwDice}
         onRepeat={repeatThrow}
         onReset={reset}
+        animEnabled={animEnabled}
+        onAnimEnabledChange={setAnimEnabled}
       />
 
       <ResultsPanel

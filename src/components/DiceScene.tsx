@@ -1,33 +1,32 @@
 /**
- * LAYER 1 — DiceScene: InstancedMesh Renderer (no physics)
+ * LAYER 1 — DiceScene: Root 3D scene with physics support
  *
- * Two InstancedMeshes:
- *   1. meshRef     — normal dice (white/red/blue/green per dieColor)
- *   2. lethalMeshRef — lethal/mortal-wound dice (fixed purple)
- *
- * Lethal zone: front strip of the board at z = LETHAL_ZONE_Z.
- * When lethal dice are present, normal dice compress into z = -7 to +1.5.
+ * Three rendering modes:
+ *   1. PREVIEW — Static grid, no physics
+ *   2. ROLLING + SETTLING — Rapier3D physics active
+ *   3. ARRANGING + ARRANGED — Lerp to sorted positions, no physics
  */
 
 'use client';
 
 import { useRef, useEffect, useMemo } from 'react';
+import { useFrame } from '@react-three/fiber';
+import { Physics, RigidBody, CuboidCollider } from '@react-three/rapier';
+import type { RapierRigidBody } from '@react-three/rapier';
 import * as THREE from 'three';
-import type { DiceRollResult, GameState, DieColor } from '../core/types';
+import type { DiceRollResult, GamePhase, DieColor } from '../core/types';
 import { createDiceGeometry } from '../rendering/DiceGeometry';
 import { createDiceMaterial, DIE_COLOR_MAP } from '../rendering/DiceMaterial';
-import { PREVIEW_QUATERNION, faceUpQuaternion } from '../core/DiceEngine';
+import { PREVIEW_QUATERNION } from '../core/DiceEngine';
+import { useDiceStore } from '../store/diceStore';
+import { isBodySettled } from '../physics/settleDetection';
+import { PHYSICS_CONFIG } from '../physics/constants';
 
 const MAX_DICE = 120;
-const BOARD_W  = 22;
-const BOARD_D  = 16;
-const ROW_SP   = 2.0;
-const COL_SP   = 1.35;
+const BOARD_W  = PHYSICS_CONFIG.boardWidth;
+const BOARD_D  = PHYSICS_CONFIG.boardDepth;
 
-// Lethal zone constants
-const LETHAL_ZONE_Z  = 6.0;  // z-center of mortal wounds strip
-const NORMAL_Z_MIN   = -7.0; // normal dice back edge
-const NORMAL_Z_MAX   =  1.5; // normal dice front edge when lethal exists
+const LETHAL_ZONE_Z = 6.0;
 
 const _p    = new THREE.Vector3();
 const _q    = new THREE.Quaternion();
@@ -39,26 +38,27 @@ function computeScale(n: number): number {
   return Math.max(0.55, Math.min(1.5, 9 / Math.sqrt(Math.max(1, n))));
 }
 
+// ─── Props ────────────────────────────────────────────────────────────
+
 interface DiceSceneProps {
   count: number;
-  gameState: GameState;
+  gamePhase: GamePhase;
   rollResult: DiceRollResult | null;
   dieColor: DieColor;
   activeMask: boolean[] | null;
   lethalMask: boolean[] | null;
 }
 
-export function DiceScene({
-  count, gameState, rollResult, dieColor, activeMask, lethalMask,
-}: DiceSceneProps) {
-  const meshRef      = useRef<THREE.InstancedMesh>(null);
-  const lethalMeshRef = useRef<THREE.InstancedMesh>(null);
+// ─── Main Component ───────────────────────────────────────────────────
 
-  const geo      = useMemo(() => createDiceGeometry(), []);
-  const mat      = useMemo(() => createDiceMaterial(), []);
+export function DiceScene({
+  count, gamePhase, rollResult, dieColor, activeMask, lethalMask,
+}: DiceSceneProps) {
+  const geo = useMemo(() => createDiceGeometry(), []);
+  const mat = useMemo(() => createDiceMaterial(), []);
   const lethalMat = useMemo(() => {
     const m = createDiceMaterial();
-    m.color.set(0.55, 0.08, 0.82); // purple for mortal wounds
+    m.color.set(0.55, 0.08, 0.82);
     return m;
   }, []);
 
@@ -67,104 +67,51 @@ export function DiceScene({
     [lethalMask],
   );
 
-  useEffect(() => {
-    const mesh      = meshRef.current;
-    const lethalMesh = lethalMeshRef.current;
-    if (!mesh || !lethalMesh) return;
+  const isPhysicsPhase = gamePhase === 'ROLLING' || gamePhase === 'SETTLING';
 
-    // Hide all slots in both meshes
-    for (let i = 0; i < MAX_DICE; i++) {
-      mesh.setMatrixAt(i, _zero);
-      lethalMesh.setMatrixAt(i, _zero);
-    }
+  return (
+    <>
+      <Lighting />
+      <Board hasAnyLethal={hasAnyLethal} />
 
-    const n = count;
-    if (n > 0) {
-      const s = computeScale(n);
-      _sc.set(s, s, s);
+      {/* PREVIEW: static grid */}
+      {gamePhase === 'PREVIEW' && (
+        <PreviewGrid count={count} geo={geo} mat={mat} dieColor={dieColor} />
+      )}
 
-      if (gameState === 'PREVIEW' || !rollResult) {
-        // ── PREVIEW: all dice in a centered grid ───────────────────────
-        const cols    = Math.ceil(Math.sqrt(n * 1.3));
-        const spacing = s * 1.4;
-        const ox      = -((cols - 1) * spacing) / 2;
-        const rowsN   = Math.ceil(n / cols);
-        const oz      = -((rowsN - 1) * spacing) / 2;
-        for (let i = 0; i < n; i++) {
-          const c = i % cols;
-          const r = Math.floor(i / cols);
-          _p.set(ox + c * spacing, s / 2 + 0.01, oz + r * spacing);
-          _q.copy(PREVIEW_QUATERNION);
-          _mat.compose(_p, _q, _sc);
-          mesh.setMatrixAt(i, _mat);
-        }
-      } else {
-        // ── ARRANGED: split normal vs lethal ───────────────────────────
-        const normalGroups: Record<number, number[]> = {};
-        const lethalGroups: Record<number, number[]> = {};
+      {/* ROLLING + SETTLING: physics simulation */}
+      {isPhysicsPhase && (
+        <Physics gravity={[...PHYSICS_CONFIG.gravity]}>
+          <PhysicsDice
+            count={count}
+            geo={geo}
+            mat={mat}
+            dieColor={dieColor}
+          />
+          <PhysicsFloor />
+          <PhysicsWalls />
+        </Physics>
+      )}
 
-        for (let i = 0; i < rollResult.values.length; i++) {
-          if (activeMask && !activeMask[i]) continue;
-          const v        = rollResult.values[i];
-          const isLethal = lethalMask?.[i] ?? false;
-          const target   = isLethal ? lethalGroups : normalGroups;
-          if (!target[v]) target[v] = [];
-          target[v].push(i);
-        }
+      {/* ARRANGING + ARRANGED: lerp to sorted positions */}
+      {(gamePhase === 'ARRANGING' || gamePhase === 'ARRANGED') && (
+        <ArrangedDice
+          rollResult={rollResult}
+          lethalMask={lethalMask}
+          dieColor={dieColor}
+          geo={geo}
+          mat={mat}
+          lethalMat={lethalMat}
+          gamePhase={gamePhase}
+        />
+      )}
+    </>
+  );
+}
 
-        // Normal dice — compressed z-range when lethal zone is in use
-        const normalVals = [1, 2, 3, 4, 5, 6].filter(v => (normalGroups[v]?.length ?? 0) > 0);
-        if (normalVals.length > 0) {
-          const rowSp   = s * ROW_SP;
-          const colSp   = s * COL_SP;
-          const zMin    = hasAnyLethal ? NORMAL_Z_MIN : -(BOARD_D / 2 - s);
-          const zMax    = hasAnyLethal ? NORMAL_Z_MAX :  (BOARD_D / 2 - s);
-          const avail   = zMax - zMin;
-          const span    = (normalVals.length - 1) * rowSp;
-          const startZ  = zMin + Math.max(0, (avail - span) / 2);
-          const maxLen  = Math.max(...normalVals.map(v => normalGroups[v].length));
-          const startX  = -((maxLen - 1) * colSp) / 2;
+// ─── Lighting ─────────────────────────────────────────────────────────
 
-          normalVals.forEach((v, rowIdx) => {
-            const row = normalGroups[v];
-            const z   = startZ + rowIdx * rowSp;
-            _q.copy(faceUpQuaternion(v));
-            row.forEach((dieIdx, colIdx) => {
-              _p.set(startX + colIdx * colSp, s / 2 + 0.01, z);
-              _mat.compose(_p, _q, _sc);
-              mesh.setMatrixAt(dieIdx, _mat);
-            });
-          });
-        }
-
-        // Lethal dice — single row at LETHAL_ZONE_Z
-        const lethalAll: { dieIdx: number; v: number }[] = [];
-        for (const v of [1, 2, 3, 4, 5, 6]) {
-          for (const dieIdx of lethalGroups[v] ?? []) {
-            lethalAll.push({ dieIdx, v });
-          }
-        }
-        if (lethalAll.length > 0) {
-          const colSp  = s * COL_SP;
-          const startX = -((lethalAll.length - 1) * colSp) / 2;
-          lethalAll.forEach(({ dieIdx, v }, colIdx) => {
-            _q.copy(faceUpQuaternion(v));
-            _p.set(startX + colIdx * colSp, s / 2 + 0.01, LETHAL_ZONE_Z);
-            _mat.compose(_p, _q, _sc);
-            lethalMesh.setMatrixAt(dieIdx, _mat);
-          });
-        }
-      }
-
-      mat.color.copy(DIE_COLOR_MAP[dieColor]);
-    }
-
-    mesh.instanceMatrix.needsUpdate = true;
-    lethalMesh.instanceMatrix.needsUpdate = true;
-    mesh.count = MAX_DICE;
-    lethalMesh.count = MAX_DICE;
-  }, [count, gameState, rollResult, activeMask, lethalMask, dieColor, hasAnyLethal]);
-
+function Lighting() {
   return (
     <>
       <ambientLight intensity={0.55} color="#f8f0e0" />
@@ -183,14 +130,20 @@ export function DiceScene({
       />
       <pointLight position={[-7, 6, -4]} intensity={0.5} color="#ffd090" distance={28} />
       <pointLight position={[ 7, 5,  4]} intensity={0.4} color="#ffffff" distance={24} />
+    </>
+  );
+}
 
-      {/* Light wood board */}
+// ─── Board + Frame ────────────────────────────────────────────────────
+
+function Board({ hasAnyLethal }: { hasAnyLethal: boolean }) {
+  return (
+    <>
       <mesh position={[0, -0.06, 0]} receiveShadow>
         <boxGeometry args={[BOARD_W, 0.12, BOARD_D]} />
         <meshStandardMaterial color="#c9a87c" roughness={0.82} metalness={0.04} />
       </mesh>
 
-      {/* Darker wood frame */}
       {([
         [-(BOARD_W / 2 + 0.35), 0.06, 0,               0.7, 0.18, BOARD_D + 0.7],
         [ (BOARD_W / 2 + 0.35), 0.06, 0,               0.7, 0.18, BOARD_D + 0.7],
@@ -203,15 +156,249 @@ export function DiceScene({
         </mesh>
       ))}
 
-      {/* Mortal Wounds zone — dark red strip at front of board */}
       {hasAnyLethal && (
         <mesh position={[0, 0.002, LETHAL_ZONE_Z]}>
           <boxGeometry args={[BOARD_W - 1.4, 0.012, 3.6]} />
           <meshStandardMaterial color="#3a0010" roughness={0.9} transparent opacity={0.75} />
         </mesh>
       )}
+    </>
+  );
+}
 
-      {/* Normal dice */}
+// ─── PREVIEW Grid ─────────────────────────────────────────────────────
+
+function PreviewGrid({ count, geo, mat, dieColor }: {
+  count: number;
+  geo: THREE.BoxGeometry;
+  mat: THREE.MeshStandardMaterial;
+  dieColor: DieColor;
+}) {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+
+  useEffect(() => {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+
+    for (let i = 0; i < MAX_DICE; i++) mesh.setMatrixAt(i, _zero);
+
+    if (count > 0) {
+      const s = computeScale(count);
+      _sc.set(s, s, s);
+      const cols    = Math.ceil(Math.sqrt(count * 1.3));
+      const spacing = s * 1.4;
+      const ox      = -((cols - 1) * spacing) / 2;
+      const rowsN   = Math.ceil(count / cols);
+      const oz      = -((rowsN - 1) * spacing) / 2;
+
+      for (let i = 0; i < count; i++) {
+        const c = i % cols;
+        const r = Math.floor(i / cols);
+        _p.set(ox + c * spacing, s / 2 + 0.01, oz + r * spacing);
+        _q.copy(PREVIEW_QUATERNION);
+        _mat.compose(_p, _q, _sc);
+        mesh.setMatrixAt(i, _mat);
+      }
+      mat.color.copy(DIE_COLOR_MAP[dieColor]);
+    }
+
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.count = MAX_DICE;
+  }, [count, dieColor, geo, mat]);
+
+  return (
+    <instancedMesh
+      ref={meshRef}
+      args={[geo, mat, MAX_DICE]}
+      castShadow
+      receiveShadow
+      frustumCulled={false}
+    />
+  );
+}
+
+// ─── Physics Dice (ROLLING + SETTLING) ────────────────────────────────
+
+function PhysicsDice({ count, geo, mat, dieColor }: {
+  count: number;
+  geo: THREE.BoxGeometry;
+  mat: THREE.MeshStandardMaterial;
+  dieColor: DieColor;
+}) {
+  const rigidBodies = useRef<(RapierRigidBody | null)[]>([]);
+  const throwApplied = useRef(false);
+  const settleFrames = useRef(0);
+
+  useEffect(() => {
+    throwApplied.current = false;
+    settleFrames.current = 0;
+    mat.color.copy(DIE_COLOR_MAP[dieColor]);
+  }, [dieColor, mat]);
+
+  useFrame(() => {
+    const store = useDiceStore.getState();
+
+    // Apply impulses once on ROLLING
+    if (store.phase === 'ROLLING' && !throwApplied.current && store.throwParams) {
+      for (let i = 0; i < Math.min(count, store.throwParams.length); i++) {
+        const body = rigidBodies.current[i];
+        if (!body) continue;
+        const tp = store.throwParams[i];
+        body.setTranslation(tp.startPosition, true);
+        body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+        body.applyImpulse(tp.impulse, true);
+        body.applyTorqueImpulse(tp.torque, true);
+        body.wakeUp();
+      }
+      throwApplied.current = true;
+      useDiceStore.setState({ phase: 'SETTLING' });
+      return;
+    }
+
+    // Check for settle during SETTLING
+    if (store.phase === 'SETTLING') {
+      let allSettled = true;
+      for (let i = 0; i < count; i++) {
+        const body = rigidBodies.current[i];
+        if (!body) continue;
+        if (!isBodySettled(body.linvel(), body.angvel())) {
+          allSettled = false;
+          break;
+        }
+      }
+
+      if (allSettled) {
+        settleFrames.current++;
+        if (settleFrames.current > 10) {
+          store.onAllDiceSettled();
+        }
+      } else {
+        settleFrames.current = 0;
+      }
+    }
+  });
+
+  const s = computeScale(count);
+
+  return (
+    <>
+      {Array.from({ length: count }, (_, i) => (
+        <RigidBody
+          key={i}
+          ref={(el: RapierRigidBody | null) => { rigidBodies.current[i] = el; }}
+          position={[0, 10 + i * 0.1, -6]}
+          restitution={PHYSICS_CONFIG.restitution}
+          friction={PHYSICS_CONFIG.friction}
+          linearDamping={PHYSICS_CONFIG.linearDamping}
+          angularDamping={PHYSICS_CONFIG.angularDamping}
+          colliders="cuboid"
+          canSleep={false}
+        >
+          <mesh geometry={geo} material={mat} scale={[s, s, s]} castShadow receiveShadow />
+        </RigidBody>
+      ))}
+    </>
+  );
+}
+
+// ─── Physics Floor + Walls ────────────────────────────────────────────
+
+function PhysicsFloor() {
+  return (
+    <RigidBody type="fixed" position={[0, -0.06, 0]}>
+      <CuboidCollider args={[BOARD_W / 2, 0.06, BOARD_D / 2]} />
+    </RigidBody>
+  );
+}
+
+function PhysicsWalls() {
+  const h = PHYSICS_CONFIG.wallHeight;
+  return (
+    <>
+      <RigidBody type="fixed" position={[-(BOARD_W / 2 + 0.35), h / 2, 0]}>
+        <CuboidCollider args={[0.35, h / 2, BOARD_D / 2 + 0.7]} />
+      </RigidBody>
+      <RigidBody type="fixed" position={[ (BOARD_W / 2 + 0.35), h / 2, 0]}>
+        <CuboidCollider args={[0.35, h / 2, BOARD_D / 2 + 0.7]} />
+      </RigidBody>
+      <RigidBody type="fixed" position={[0, h / 2, -(BOARD_D / 2 + 0.35)]}>
+        <CuboidCollider args={[BOARD_W / 2 + 0.7, h / 2, 0.35]} />
+      </RigidBody>
+      <RigidBody type="fixed" position={[0, h / 2,  (BOARD_D / 2 + 0.35)]}>
+        <CuboidCollider args={[BOARD_W / 2 + 0.7, h / 2, 0.35]} />
+      </RigidBody>
+    </>
+  );
+}
+
+// ─── Arranged Dice (ARRANGING + ARRANGED) ─────────────────────────────
+
+function ArrangedDice({ rollResult, lethalMask, dieColor, geo, mat, lethalMat, gamePhase }: {
+  rollResult: DiceRollResult | null;
+  lethalMask: boolean[] | null;
+  dieColor: DieColor;
+  geo: THREE.BoxGeometry;
+  mat: THREE.MeshStandardMaterial;
+  lethalMat: THREE.MeshStandardMaterial;
+  gamePhase: GamePhase;
+}) {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const lethalMeshRef = useRef<THREE.InstancedMesh>(null);
+
+  useEffect(() => {
+    mat.color.copy(DIE_COLOR_MAP[dieColor]);
+  }, [dieColor, mat]);
+
+  useFrame((_, delta) => {
+    const mesh = meshRef.current;
+    const lethalMesh = lethalMeshRef.current;
+    if (!mesh || !lethalMesh || !rollResult) return;
+
+    const store = useDiceStore.getState();
+
+    if (store.phase === 'ARRANGING') {
+      store.tickArrangeAnimation(delta);
+    }
+
+    const { arrangeTargets, arrangeProgress } = useDiceStore.getState();
+    if (!arrangeTargets) return;
+
+    const n = rollResult.count;
+    const s = computeScale(n);
+    _sc.set(s, s, s);
+
+    for (let i = 0; i < MAX_DICE; i++) {
+      mesh.setMatrixAt(i, _zero);
+      lethalMesh.setMatrixAt(i, _zero);
+    }
+
+    const t = easeOutCubic(arrangeProgress);
+
+    for (const [dieIdx, target] of arrangeTargets) {
+      const isLethal = lethalMask?.[dieIdx] ?? false;
+      const targetMesh = isLethal ? lethalMesh : mesh;
+
+      _p.set(target.position[0], target.position[1], target.position[2]);
+
+      if (t < 1) {
+        const startY = target.position[1] + 2 * (1 - t);
+        _p.y = target.position[1] * t + startY * (1 - t);
+      }
+
+      _q.set(target.quaternion[0], target.quaternion[1], target.quaternion[2], target.quaternion[3]);
+      _mat.compose(_p, _q, _sc);
+      targetMesh.setMatrixAt(dieIdx, _mat);
+    }
+
+    mesh.instanceMatrix.needsUpdate = true;
+    lethalMesh.instanceMatrix.needsUpdate = true;
+    mesh.count = MAX_DICE;
+    lethalMesh.count = MAX_DICE;
+  });
+
+  return (
+    <>
       <instancedMesh
         ref={meshRef}
         args={[geo, mat, MAX_DICE]}
@@ -219,8 +406,6 @@ export function DiceScene({
         receiveShadow
         frustumCulled={false}
       />
-
-      {/* Lethal / Mortal Wound dice — purple material */}
       <instancedMesh
         ref={lethalMeshRef}
         args={[geo, lethalMat, MAX_DICE]}
@@ -230,4 +415,10 @@ export function DiceScene({
       />
     </>
   );
+}
+
+// ─── Easing ───────────────────────────────────────────────────────────
+
+function easeOutCubic(t: number): number {
+  return 1 - Math.pow(1 - t, 3);
 }

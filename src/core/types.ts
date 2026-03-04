@@ -1,9 +1,12 @@
 // ============================================================
-// LAYER 2 — Simplified State Machine (no physics phases)
+// LAYER 2 — Game Phase State Machine
 // ============================================================
-export type GameState =
-  | 'PREVIEW'   // Dice visible in grid, not yet rolled
-  | 'ARRANGED'; // Dice sorted in rows by face value
+export type GamePhase =
+  | 'PREVIEW'    // Dice visible in grid, no physics
+  | 'ROLLING'    // Impulses applied, dice in the air
+  | 'SETTLING'   // Dice bouncing, losing velocity
+  | 'ARRANGING'  // Lerp from physics positions to sorted layout
+  | 'ARRANGED';  // Dice sorted by face value, actions available
 
 // ============================================================
 // LAYER 4 — Warhammer Phase + Rules
@@ -70,4 +73,21 @@ export interface DiceRollResult {
 export interface RerollRequest {
   indices: number[];
   updatedResult: DiceRollResult;
+}
+
+// ============================================================
+// LAYER 2b — Physics Animation Types
+// ============================================================
+
+/** Launch parameters for a single die */
+export interface ThrowParams {
+  impulse: { x: number; y: number; z: number };
+  torque:  { x: number; y: number; z: number };
+  startPosition: { x: number; y: number; z: number };
+}
+
+/** Target position + rotation for the arrange animation */
+export interface ArrangeTarget {
+  position: [number, number, number];
+  quaternion: [number, number, number, number];
 }

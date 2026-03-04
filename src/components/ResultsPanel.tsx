@@ -10,7 +10,7 @@
 'use client';
 
 import type {
-  DiceRollResult, DieColor, RollHistoryEntry, WarhPhase, GameState, SustainedX,
+  DiceRollResult, DieColor, RollHistoryEntry, WarhPhase, GamePhase, SustainedX,
 } from '../core/types';
 import { WARH_PHASE_LABEL } from '../core/types';
 
@@ -20,7 +20,7 @@ interface ResultsPanelProps {
   lethalMask:        boolean[] | null;
   dieColor:          DieColor;
   history:           RollHistoryEntry[];
-  gameState:         GameState;
+  gamePhase:         GamePhase;
   sustainedX:        SustainedX;
   onSustainedXChange:(x: SustainedX) => void;
   onDelete:          (faceValue: number) => void;
@@ -58,13 +58,14 @@ function phaseLabel(phase: WarhPhase | null): string {
 }
 
 export function ResultsPanel({
-  rollResult, activeMask, lethalMask, dieColor, history, gameState,
+  rollResult, activeMask, lethalMask, dieColor, history, gamePhase,
   sustainedX, onSustainedXChange,
   onDelete, onReroll, onSustainedHits, onToggleLethal,
 }: ResultsPanelProps) {
   const dipColor = COLOR_HEX[dieColor];
   const hasResult = rollResult !== null;
-  const inArranged = gameState === 'ARRANGED';
+  const inArranged = gamePhase === 'ARRANGED';
+  const busy = gamePhase === 'ROLLING' || gamePhase === 'SETTLING' || gamePhase === 'ARRANGING';
 
   // Count active dice showing face v (includes lethal)
   function getFaceCount(v: number): number {
@@ -164,18 +165,18 @@ export function ResultsPanel({
                 {/* Action buttons */}
                 <td style={s.actions}>
                   <button
-                    style={{ ...s.actBtn, color: hasResult && cnt > 0 ? '#ff5555' : '#2a3a50' }}
+                    style={{ ...s.actBtn, color: hasResult && cnt > 0 && !busy ? '#ff5555' : '#2a3a50' }}
                     title={`Eliminar todos los ${v}`}
                     onClick={() => onDelete(v)}
-                    disabled={!hasResult || cnt === 0}
+                    disabled={!hasResult || cnt === 0 || busy}
                   >
                     del
                   </button>
                   <button
-                    style={{ ...s.actBtn, color: hasResult && rerollable > 0 ? '#00d4ff' : '#2a3a50' }}
+                    style={{ ...s.actBtn, color: hasResult && rerollable > 0 && !busy ? '#00d4ff' : '#2a3a50' }}
                     title={`Re-tirar ${v}s (excluye letales)`}
                     onClick={() => onReroll(v)}
-                    disabled={!hasResult || rerollable === 0}
+                    disabled={!hasResult || rerollable === 0 || busy}
                   >
                     roll
                   </button>
@@ -192,12 +193,12 @@ export function ResultsPanel({
                       ...s.actBtn,
                       color: groupLethal
                         ? '#cc44ff'
-                        : hasResult && cnt > 0 ? '#884488' : '#2a3a50',
+                        : hasResult && cnt > 0 && !busy ? '#884488' : '#2a3a50',
                       fontWeight: groupLethal ? 900 : 700,
                     }}
                     title={groupLethal ? `Quitar lethal de ${v}s` : `Marcar ${v}s como Mortal Wounds`}
                     onClick={() => onToggleLethal(v)}
-                    disabled={!hasResult || cnt === 0}
+                    disabled={!hasResult || cnt === 0 || busy}
                   >
                     {groupLethal ? '☠let' : 'let'}
                   </button>

@@ -7,7 +7,7 @@
 
 'use client';
 
-import type { GameState, DieColor, WarhPhase } from '../core/types';
+import type { GamePhase, DieColor, WarhPhase } from '../core/types';
 import { WARH_PHASE_LABEL } from '../core/types';
 
 interface UIControlsProps {
@@ -19,7 +19,7 @@ interface UIControlsProps {
   onTurnChange: (t: number) => void;
   currentPhase: WarhPhase | null;
   onPhaseChange: (p: WarhPhase | null) => void;
-  gameState: GameState;
+  gamePhase: GamePhase;
   onThrow: () => void;
   onRepeat: () => void;
   onReset: () => void;
@@ -43,9 +43,10 @@ export function UIControls({
   dieColor, onColorChange,
   currentTurn, onTurnChange,
   currentPhase, onPhaseChange,
-  gameState, onThrow, onRepeat, onReset,
+  gamePhase, onThrow, onRepeat, onReset,
 }: UIControlsProps) {
-  const busy = false; // no physics phases, never busy
+  // Disable actions during physics animation phases
+  const busy = gamePhase === 'ROLLING' || gamePhase === 'SETTLING' || gamePhase === 'ARRANGING';
 
   return (
     <div style={s.bar}>
@@ -106,7 +107,7 @@ export function UIControls({
         <button
           style={s.repeatBtn}
           onClick={onRepeat}
-          disabled={gameState !== 'ARRANGED'}
+          disabled={gamePhase !== 'ARRANGED'}
           title="Repetir tirada (se registra como tirada repetida)"
         >
           ↺ Repetir
@@ -119,7 +120,7 @@ export function UIControls({
         <button
           style={{ ...s.throwBtn, opacity: count > 0 ? 1 : 0.45 }}
           onClick={onThrow}
-          disabled={count === 0 || busy}
+          disabled={count === 0 || busy || (gamePhase !== 'PREVIEW' && gamePhase !== 'ARRANGED')}
         >
           ▶ TIRAR DADOS
         </button>

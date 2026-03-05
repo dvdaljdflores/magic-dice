@@ -268,40 +268,12 @@ export function ResultsPanel({
         {inArranged && (
           <div style={{ ...s.actionStrip, top: mobileBarH + 8 }}>
             {FACES.map(v => {
-              const cnt         = getFaceCount(v);
+              const cnt = getFaceCount(v);
               if (cnt === 0) return null;
-              const rerollable  = getRerollableCount(v);
-              const delCount    = getDeleteableCount(v);
-              const rollCount   = getRerollableBelowCount(v);
-              const groupLethal = isGroupLethal(v);
-
               return (
                 <div key={v} style={s.actionRow}>
                   <span style={{ color: dipColor, fontSize: 13, lineHeight: 1 }}>{faceEmoji(v)}</span>
                   <span style={s.actionCnt}>{cnt}</span>
-                  <button
-                    style={{ ...s.mActBtn, color: delCount > 0 ? '#ff5555' : '#2a3a50' }}
-                    disabled={delCount === 0}
-                    onClick={() => onDelete(v)}
-                    title={`Del ≤${v}`}
-                  >DEL</button>
-                  <button
-                    style={{ ...s.mActBtn, color: rollCount > 0 ? '#00d4ff' : '#2a3a50' }}
-                    disabled={rollCount === 0}
-                    onClick={() => onReroll(v)}
-                    title={`Roll ≤${v}`}
-                  >R</button>
-                  <button
-                    style={{ ...s.mActBtn, color: rerollable > 0 ? '#44cc88' : '#2a3a50' }}
-                    disabled={rerollable === 0}
-                    onClick={() => onSustainedHits(v)}
-                    title={`Sus ×${sustainedX}`}
-                  >S</button>
-                  <button
-                    style={{ ...s.mActBtn, color: groupLethal ? '#cc44ff' : cnt > 0 ? '#884488' : '#2a3a50' }}
-                    onClick={() => onToggleLethal(v)}
-                    title={groupLethal ? 'Quitar lethal' : 'Lethal'}
-                  >{groupLethal ? '☠L' : 'L'}</button>
                 </div>
               );
             })}
@@ -356,12 +328,16 @@ export function ResultsPanel({
               <button style={s.sheetClose} onClick={() => setSheetOpen(false)}>✕</button>
             </div>
 
-            {/* Counts-only table (no action buttons) */}
+            {/* Results table with action buttons */}
             <table style={s.table}>
               <tbody>
                 {FACES.map(v => {
-                  const cnt       = getFaceCount(v);
-                  const lethalCnt = getLethalCount(v);
+                  const cnt         = getFaceCount(v);
+                  const lethalCnt   = getLethalCount(v);
+                  const rerollable  = getRerollableCount(v);
+                  const delCount    = getDeleteableCount(v);
+                  const rollCount   = getRerollableBelowCount(v);
+                  const groupLethal = isGroupLethal(v);
                   return (
                     <tr key={v} style={s.row}>
                       <td style={s.face}>
@@ -382,6 +358,32 @@ export function ResultsPanel({
                         {inArranged && lethalCnt > 0 && (
                           <span style={s.lethalBadge}>☠{lethalCnt}</span>
                         )}
+                      </td>
+                      <td style={s.actions}>
+                        <button
+                          style={{ ...s.mActBtn, color: delCount > 0 && !busy ? '#ff5555' : '#2a3a50' }}
+                          disabled={busy || delCount === 0}
+                          onClick={() => onDelete(v)}
+                          title={`Del ≤${v}`}
+                        >DEL</button>
+                        <button
+                          style={{ ...s.mActBtn, color: rollCount > 0 && !busy ? '#00d4ff' : '#2a3a50' }}
+                          disabled={busy || rollCount === 0}
+                          onClick={() => onReroll(v)}
+                          title={`Roll ≤${v}`}
+                        >R</button>
+                        <button
+                          style={{ ...s.mActBtn, color: rerollable > 0 && inArranged ? '#44cc88' : '#2a3a50' }}
+                          disabled={!inArranged || rerollable === 0}
+                          onClick={() => onSustainedHits(v)}
+                          title={`Sus ×${sustainedX}`}
+                        >S</button>
+                        <button
+                          style={{ ...s.mActBtn, color: groupLethal ? '#cc44ff' : cnt > 0 && !busy ? '#884488' : '#2a3a50' }}
+                          disabled={busy || cnt === 0}
+                          onClick={() => onToggleLethal(v)}
+                          title={groupLethal ? 'Quitar lethal' : 'Lethal'}
+                        >{groupLethal ? '☠L' : 'L'}</button>
                       </td>
                     </tr>
                   );

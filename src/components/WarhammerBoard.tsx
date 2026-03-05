@@ -1,19 +1,3 @@
-/**
- * LAYER 1/2/3 — WarhammerBoard: Root Orchestrator
- *
- * Layout (desktop):
- *   - Top bar (UIControls): absolute, full width, ~72px
- *   - Left panel (ResultsPanel): absolute, 240px wide, below top bar
- *   - Canvas (DiceScene): absolute, fills remaining area
- *
- * Layout (mobile < 768px):
- *   - Top bar (UIControls): compact single row, 60px
- *   - Canvas: fills viewport below top bar (no rotation)
- *   - ResultsPanel: floating action strip over canvas + collapsible sheet
- *
- * All state is managed via Zustand (useDiceStore).
- */
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -30,6 +14,7 @@ const LEFT_W       = 240;
 const MOBILE_BAR_H = 60;
 
 export default function WarhammerBoard() {
+
   const count        = useDiceStore(s => s.count);
   const phase        = useDiceStore(s => s.phase);
   const rollResult   = useDiceStore(s => s.rollResult);
@@ -53,12 +38,12 @@ export default function WarhammerBoard() {
   const setDieColor   = useDiceStore(s => s.setDieColor);
   const setTurn       = useDiceStore(s => s.setTurn);
   const setWarhPhase  = useDiceStore(s => s.setWarhPhase);
-  const setSustainedX   = useDiceStore(s => s.setSustainedX);
-  const undo            = useDiceStore(s => s.undo);
-  const animEnabled     = useDiceStore(s => s.animEnabled);
-  const setAnimEnabled  = useDiceStore(s => s.setAnimEnabled);
+  const setSustainedX = useDiceStore(s => s.setSustainedX);
+  const undo          = useDiceStore(s => s.undo);
+  const animEnabled   = useDiceStore(s => s.animEnabled);
+  const setAnimEnabled = useDiceStore(s => s.setAnimEnabled);
 
-  const [isMobile,   setIsMobile]   = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const [cameraLocked, setCameraLocked] = useState(false);
 
   useEffect(() => {
@@ -85,11 +70,10 @@ export default function WarhammerBoard() {
     <div style={{ width: '100vw', height: '100vh', position: 'relative', background: '#08080f' }}>
 
       <Canvas
-        key={isMobile ? 'mobile' : 'desktop'}
         shadows
         camera={{
-          position: isMobile ? [0, 24, 9] : [0, 18, 15],
-          fov: isMobile ? 50 : 40,
+          position: isMobile ? [0, 11, 9] : [0, 18, 15],
+          fov: isMobile ? 60 : 40,
           near: 0.5,
           far: 85,
         }}
@@ -97,6 +81,7 @@ export default function WarhammerBoard() {
         dpr={[1, 2]}
         style={canvasStyle}
       >
+
         <fog attach="fog" args={['#08080f', 22, 60]} />
 
         <DiceScene
@@ -108,15 +93,16 @@ export default function WarhammerBoard() {
           lethalMask={lethalMask}
         />
 
-<OrbitControls
-  enabled={!cameraLocked}
-  enablePan={false}
-  minPolarAngle={0.25}
-  maxPolarAngle={isMobile ? Math.PI / 2.6 : Math.PI / 2.1}
-  minDistance={8}
-  maxDistance={38}
-  target={isMobile ? [0, 0, -6] : [0, 0, 0]}
-/>
+        <OrbitControls
+          enabled={!cameraLocked}
+          enablePan={false}
+          minPolarAngle={isMobile ? 0.9 : 0.25}
+          maxPolarAngle={isMobile ? 1.35 : Math.PI / 2.1}
+          minDistance={isMobile ? 5 : 8}
+          maxDistance={isMobile ? 22 : 38}
+          target={isMobile ? [0, 0, -8] : [0, 0, 0]}
+        />
+
       </Canvas>
 
       <UIControls
@@ -158,6 +144,7 @@ export default function WarhammerBoard() {
         isMobile={isMobile}
         mobileBarH={MOBILE_BAR_H}
       />
+
     </div>
   );
 }

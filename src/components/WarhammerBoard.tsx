@@ -108,15 +108,15 @@ export default function WarhammerBoard() {
           lethalMask={lethalMask}
         />
 
-        <OrbitControls
-          enabled={!cameraLocked}
-          enablePan={false}
-          minPolarAngle={0.25}
-          maxPolarAngle={isMobile ? Math.PI / 2.6 : Math.PI / 2.1}
-          minDistance={8}
-          maxDistance={38}
-          target={[0, 0, 0]}
-        />
+<OrbitControls
+  enabled={!cameraLocked}
+  enablePan={false}
+  minPolarAngle={0.25}
+  maxPolarAngle={isMobile ? Math.PI / 2.6 : Math.PI / 2.1}
+  minDistance={8}
+  maxDistance={38}
+  target={isMobile ? [0, 0, -6] : [0, 0, 0]}
+/>
       </Canvas>
 
       <UIControls

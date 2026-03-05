@@ -24,8 +24,33 @@ import { isBodySettled } from '../physics/settleDetection';
 import { PHYSICS_CONFIG } from '../physics/constants';
 
 const MAX_DICE = 120;
-const BOARD_W  = PHYSICS_CONFIG.boardWidth;
-const BOARD_D  = PHYSICS_CONFIG.boardDepth;
+
+// Desktop board size (original physics config)
+const BOARD_W_DESKTOP = PHYSICS_CONFIG.boardWidth;
+const BOARD_D_DESKTOP = PHYSICS_CONFIG.boardDepth;
+
+// Mobile board size (portrait orientation)
+const BOARD_W_MOBILE = 16;
+const BOARD_D_MOBILE = 22;
+
+// Mobile layout flag (controlled by WarhammerBoard)
+let _mobileMode = false;
+
+export function setMobileLayoutMode(v: boolean) {
+  _mobileMode = v;
+}
+
+function getBoardWidth() {
+  return _mobileMode ? BOARD_W_MOBILE : BOARD_W_DESKTOP;
+}
+
+function getBoardDepth() {
+  return _mobileMode ? BOARD_D_MOBILE : BOARD_D_DESKTOP;
+}
+
+// Actual board dimensions used by the scene
+const BOARD_W = getBoardWidth();
+const BOARD_D = getBoardDepth();
 
 const LETHAL_ZONE_Z = 6.0;
 

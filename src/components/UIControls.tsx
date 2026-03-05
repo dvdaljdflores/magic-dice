@@ -104,11 +104,11 @@ export function UIControls({
       {turnOpen && (
         <>
           <div style={s.backdrop} onClick={closeAll} />
-          <div style={s.dropMenu}>
+          <div style={isMobile ? s.dropMenuMobile : s.dropMenu}>
             {TURNS.map(t => (
               <button
                 key={t}
-                style={{ ...s.dropItem, ...(currentTurn === t ? s.dropItemActive : {}) }}
+                style={{ ...(isMobile ? s.dropItemMobile : s.dropItem), ...(currentTurn === t ? s.dropItemActive : {}) }}
                 onClick={() => { onTurnChange(t); setTurnOpen(false); }}
               >
                 Turno {t}
@@ -137,9 +137,9 @@ export function UIControls({
       {phaseOpen && (
         <>
           <div style={s.backdrop} onClick={closeAll} />
-          <div style={{ ...s.dropMenu, minWidth: 160 }}>
+          <div style={isMobile ? s.dropMenuMobile : { ...s.dropMenu, minWidth: 160 }}>
             <button
-              style={{ ...s.dropItem, ...(currentPhase === null ? s.dropItemActive : {}) }}
+              style={{ ...(isMobile ? s.dropItemMobile : s.dropItem), ...(currentPhase === null ? s.dropItemActive : {}) }}
               onClick={() => { onPhaseChange(null); setPhaseOpen(false); }}
             >
               — ninguna —
@@ -147,7 +147,7 @@ export function UIControls({
             {PHASES.map(p => (
               <button
                 key={p}
-                style={{ ...s.dropItem, ...(currentPhase === p ? s.dropItemActive : {}) }}
+                style={{ ...(isMobile ? s.dropItemMobile : s.dropItem), ...(currentPhase === p ? s.dropItemActive : {}) }}
                 onClick={() => { onPhaseChange(p); setPhaseOpen(false); }}
               >
                 {WARH_PHASE_LABEL[p]}
@@ -172,7 +172,7 @@ export function UIControls({
       {histOpen && (
         <>
           <div style={s.backdrop} onClick={closeAll} />
-          <div style={{ ...s.dropMenu, right: 0, left: 'auto', width: 260, maxHeight: 360, overflowY: 'auto' }}>
+          <div style={isMobile ? { ...s.dropMenuMobile, overflowY: 'auto' } : { ...s.dropMenu, right: 0, left: 'auto', width: 260, maxHeight: 360, overflowY: 'auto' }}>
             <div style={s.histHead}>HISTORIAL</div>
             {history.length === 0 ? (
               <div style={s.histEmpty}>sin tiradas aún</div>
@@ -410,7 +410,7 @@ const s: Record<string, React.CSSProperties> = {
   barMobile: {
     position: 'absolute',
     top: 0, left: 0, right: 0,
-    height: 52,
+    height: 60,
     background: 'rgba(8, 10, 20, 0.97)',
     borderBottom: '1px solid #1a2a40',
     backdropFilter: 'blur(10px)',
@@ -643,5 +643,27 @@ const s: Record<string, React.CSSProperties> = {
   histItemRow: {
     display: 'flex', justifyContent: 'space-between',
     alignItems: 'center', gap: 8,
+  },
+  // ── Mobile full-screen overlay dropdown ────────────────────────────────
+  dropMenuMobile: {
+    position: 'fixed',
+    top: 60, left: 0, right: 0,
+    zIndex: 200,
+    background: 'rgba(4, 8, 20, 0.98)',
+    borderBottom: '1px solid #1a3a5a',
+    maxHeight: '70vh',
+    overflowY: 'auto',
+    fontFamily: font,
+    boxShadow: '0 8px 32px rgba(0,0,0,0.8)',
+  },
+  dropItemMobile: {
+    display: 'block', width: '100%',
+    background: 'none', border: 'none',
+    borderBottom: '1px solid #0a1828',
+    color: '#4a6a8a', fontFamily: font,
+    fontSize: 14, fontWeight: 700,
+    padding: '14px 20px',
+    textAlign: 'left', cursor: 'pointer',
+    letterSpacing: 0.5,
   },
 };

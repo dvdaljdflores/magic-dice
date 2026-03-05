@@ -2,14 +2,17 @@
  * LAYER 2/6 — ResultsPanel
  *
  * Desktop: absolute left panel (240px), includes history.
- * Mobile:  compact floating overlay at the bottom of the canvas.
- *          History is in the top-bar history dropdown (UIControls).
- *          Not shown in PREVIEW (canvas fully visible until first throw).
+ * Mobile:
+ *   - Action strip: floating panel on the right of the canvas, per-face
+ *     DEL/R/S/L buttons visible only in ARRANGED state.
+ *   - Toggle chip: bottom-center button that opens/closes the results sheet.
+ *   - Results sheet: collapsible bottom panel with face counts + SUS + Undo.
+ *   Hidden entirely until the first throw.
  */
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type {
   DiceRollResult, DieColor, RollHistoryEntry, WarhPhase, GamePhase, SustainedX,
 } from '../core/types';
@@ -31,6 +34,7 @@ interface ResultsPanelProps {
   onUndo:            () => void;
   canUndo:           boolean;
   isMobile:          boolean;
+  mobileBarH:        number;
 }
 
 const COLOR_HEX: Record<DieColor, string> = {
@@ -74,14 +78,20 @@ export function ResultsPanel({
   rollResult, activeMask, lethalMask, dieColor, history, gamePhase,
   sustainedX, onSustainedXChange,
   onDelete, onReroll, onSustainedHits, onToggleLethal,
-  onUndo, canUndo, isMobile,
+  onUndo, canUndo, isMobile, mobileBarH,
 }: ResultsPanelProps) {
   const [modalEntry, setModalEntry] = useState<RollHistoryEntry | null>(null);
+  const [sheetOpen,  setSheetOpen]  = useState(false);
 
   const dipColor   = COLOR_HEX[dieColor];
   const hasResult  = rollResult !== null;
   const inArranged = gamePhase === 'ARRANGED';
   const busy       = gamePhase === 'ROLLING' || gamePhase === 'SETTLING' || gamePhase === 'ARRANGING';
+
+  // Auto-open results sheet when dice finish arranging
+  useEffect(() => {
+    if (gamePhase === 'ARRANGED') setSheetOpen(true);
+  }, [gamePhase]);
 
   function getFaceCount(v: number): number {
     if (!rollResult) return 0;
@@ -135,7 +145,7 @@ export function ResultsPanel({
 
   const totalActive = FACES.reduce((acc, v) => acc + getFaceCount(v), 0);
 
-  // ── Results table (shared between desktop and mobile) ─────────────────
+  // ── Desktop results table (with action buttons) ────────────────────────
   const resultsTable = (
     <table style={s.table}>
       <tbody>
@@ -248,49 +258,139 @@ export function ResultsPanel({
     );
   })();
 
-  // ── Mobile: compact overlay over canvas bottom ─────────────────────────
-  // Hidden in PREVIEW (canvas fully visible). Shown as soon as there's a result.
+  // ── Mobile ─────────────────────────────────────────────────────────────
   if (isMobile) {
     if (!hasResult) return null;
+
     return (
       <>
-        <div style={s.overlay}>
-          {/* SUS × + Regresar */}
-          <div style={s.topRow}>
-            <div style={s.susRow}>
-              <span style={s.susLabel}>SUS×</span>
-              {([1, 2, 3] as SustainedX[]).map(x => (
-                <button
-                  key={x}
-                  style={{ ...s.susBtn, ...(sustainedX === x ? s.susBtnActive : {}) }}
-                  onClick={() => onSustainedXChange(x)}
-                >
-                  {x}
-                </button>
-              ))}
-            </div>
+        {/* Floating action strip — right side of canvas, ARRANGED only */}
+        {inArranged && (
+          <div style={{ ...s.actionStrip, top: mobileBarH + 8 }}>
+            {FACES.map(v => {
+              const cnt         = getFaceCount(v);
+              if (cnt === 0) return null;
+              const rerollable  = getRerollableCount(v);
+              const delCount    = getDeleteableCount(v);
+              const rollCount   = getRerollableBelowCount(v);
+              const groupLethal = isGroupLethal(v);
 
-            {busy && <span style={s.animStatus}>{spinningLabel(gamePhase)}</span>}
+              return (
+                <div key={v} style={s.actionRow}>
+                  <span style={{ color: dipColor, fontSize: 13, lineHeight: 1 }}>{faceEmoji(v)}</span>
+                  <span style={s.actionCnt}>{cnt}</span>
+                  <button
+                    style={{ ...s.mActBtn, color: delCount > 0 ? '#ff5555' : '#2a3a50' }}
+                    disabled={delCount === 0}
+                    onClick={() => onDelete(v)}
+                    title={`Del ≤${v}`}
+                  >DEL</button>
+                  <button
+                    style={{ ...s.mActBtn, color: rollCount > 0 ? '#00d4ff' : '#2a3a50' }}
+                    disabled={rollCount === 0}
+                    onClick={() => onReroll(v)}
+                    title={`Roll ≤${v}`}
+                  >R</button>
+                  <button
+                    style={{ ...s.mActBtn, color: rerollable > 0 ? '#44cc88' : '#2a3a50' }}
+                    disabled={rerollable === 0}
+                    onClick={() => onSustainedHits(v)}
+                    title={`Sus ×${sustainedX}`}
+                  >S</button>
+                  <button
+                    style={{ ...s.mActBtn, color: groupLethal ? '#cc44ff' : cnt > 0 ? '#884488' : '#2a3a50' }}
+                    onClick={() => onToggleLethal(v)}
+                    title={groupLethal ? 'Quitar lethal' : 'Lethal'}
+                  >{groupLethal ? '☠L' : 'L'}</button>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
-            {inArranged && hasResult && (
-              <span style={s.totalLabel}>
-                <span style={{ color: '#3a5a7a' }}>TOTAL </span>
-                <span style={{ color: '#c9a84c', fontWeight: 700 }}>{totalActive}</span>
-              </span>
-            )}
-
-            <button
-              style={{ ...s.undoBtn, opacity: canUndo ? 1 : 0.35 }}
-              disabled={!canUndo}
-              onClick={onUndo}
-              title={canUndo ? 'Deshacer' : 'Nada que deshacer (solo del/roll/let/sus)'}
-            >
-              ↩
+        {/* Toggle chip — bottom center, visible when sheet is closed */}
+        {!sheetOpen && (
+          <div style={s.chipWrap}>
+            <button style={s.toggleChip} onClick={() => setSheetOpen(true)}>
+              {busy
+                ? spinningLabel(gamePhase)
+                : `≡  ${totalActive} dados`}
             </button>
           </div>
+        )}
 
-          {resultsTable}
-        </div>
+        {/* Collapsible results sheet */}
+        {sheetOpen && (
+          <div style={s.mobileSheet}>
+            {/* Sheet header */}
+            <div style={s.sheetHeader}>
+              <div style={s.susRow}>
+                <span style={s.susLabel}>SUS×</span>
+                {([1, 2, 3] as SustainedX[]).map(x => (
+                  <button
+                    key={x}
+                    style={{ ...s.susBtn, ...(sustainedX === x ? s.susBtnActive : {}) }}
+                    onClick={() => onSustainedXChange(x)}
+                  >
+                    {x}
+                  </button>
+                ))}
+              </div>
+
+              {busy && <span style={s.animStatus}>{spinningLabel(gamePhase)}</span>}
+
+              {inArranged && (
+                <span style={s.totalLabel}>
+                  <span style={{ color: '#3a5a7a' }}>TOTAL </span>
+                  <span style={{ color: '#c9a84c', fontWeight: 700 }}>{totalActive}</span>
+                </span>
+              )}
+
+              <button
+                style={{ ...s.undoBtn, opacity: canUndo ? 1 : 0.35 }}
+                disabled={!canUndo}
+                onClick={onUndo}
+                title={canUndo ? 'Deshacer' : 'Nada que deshacer'}
+              >↩</button>
+
+              <button style={s.sheetClose} onClick={() => setSheetOpen(false)}>✕</button>
+            </div>
+
+            {/* Counts-only table (no action buttons) */}
+            <table style={s.table}>
+              <tbody>
+                {FACES.map(v => {
+                  const cnt       = getFaceCount(v);
+                  const lethalCnt = getLethalCount(v);
+                  return (
+                    <tr key={v} style={s.row}>
+                      <td style={s.face}>
+                        <span style={{ color: dipColor, fontSize: 14, lineHeight: 1 }}>
+                          {faceEmoji(v)}
+                        </span>
+                        <span style={s.faceNum}>{v}</span>
+                      </td>
+                      <td style={s.cnt}>
+                        {busy
+                          ? <span style={{ color: '#1a3a5a' }}>···</span>
+                          : cnt > 0
+                            ? <span>× {cnt}</span>
+                            : <span style={{ color: '#2a3a50' }}>—</span>
+                        }
+                      </td>
+                      <td style={s.lethalCell}>
+                        {inArranged && lethalCnt > 0 && (
+                          <span style={s.lethalBadge}>☠{lethalCnt}</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         {modal}
       </>
     );
@@ -407,18 +507,74 @@ const s: Record<string, React.CSSProperties> = {
     backdropFilter: 'blur(14px)',
     fontFamily: font, zIndex: 50, overflowY: 'auto',
   },
-  // ── Mobile overlay ─────────────────────────────────────────────────────
-  overlay: {
+  // ── Mobile: floating action strip ──────────────────────────────────────
+  actionStrip: {
+    position: 'absolute',
+    // top is set dynamically via inline override: mobileBarH + 8
+    right: 8,
+    background: 'rgba(4, 7, 16, 0.85)',
+    border: '1px solid #1a3a5a',
+    borderRadius: 6,
+    padding: '5px 6px',
+    zIndex: 30,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 4,
+    backdropFilter: 'blur(8px)',
+  },
+  actionRow: {
+    display: 'flex', alignItems: 'center', gap: 4,
+  },
+  actionCnt: {
+    color: '#c9a84c', fontSize: 10, fontWeight: 700,
+    minWidth: 14, fontFamily: font,
+  },
+  mActBtn: {
+    background: 'none', border: 'none',
+    fontSize: 9, fontFamily: font,
+    fontWeight: 700, cursor: 'pointer',
+    padding: '2px 3px', letterSpacing: 0.3,
+    textTransform: 'uppercase' as const, lineHeight: 1,
+  },
+  // ── Mobile: toggle chip ────────────────────────────────────────────────
+  chipWrap: {
+    position: 'absolute',
+    bottom: 20, left: 0, right: 0,
+    display: 'flex', justifyContent: 'center',
+    zIndex: 35, pointerEvents: 'none',
+  },
+  toggleChip: {
+    fontFamily: font,
+    background: 'rgba(4, 7, 16, 0.88)',
+    border: '1px solid #2a4a6a',
+    borderRadius: 20, color: '#6a9aaa',
+    padding: '6px 20px', fontSize: 11,
+    fontWeight: 700, letterSpacing: 1,
+    cursor: 'pointer', pointerEvents: 'auto',
+  },
+  // ── Mobile: collapsible results sheet ─────────────────────────────────
+  mobileSheet: {
     position: 'absolute',
     bottom: 0, left: 0, right: 0,
-    height: 220,  // must match MOBILE_OVERLAY_H in WarhammerBoard.tsx
-    background: 'rgba(4, 7, 16, 0.93)',
+    background: 'rgba(4, 7, 16, 0.96)',
     borderTop: '1px solid #1a3a5a',
     backdropFilter: 'blur(12px)',
-    padding: '5px 10px 8px',
-    fontFamily: font,
-    zIndex: 30,
-    overflowY: 'auto',
+    fontFamily: font, zIndex: 40,
+    maxHeight: '55vh', overflowY: 'auto',
+    padding: '6px 12px 12px',
+  },
+  sheetHeader: {
+    display: 'flex', alignItems: 'center',
+    gap: 8, marginBottom: 6,
+    flexWrap: 'wrap' as const,
+  },
+  sheetClose: {
+    marginLeft: 'auto',
+    fontFamily: font, background: 'none',
+    border: '1px solid #2a2a3a',
+    borderRadius: 4, color: '#6a6a8a',
+    padding: '2px 8px', fontSize: 12,
+    cursor: 'pointer', lineHeight: 1,
   },
   // ── Shared ─────────────────────────────────────────────────────────────
   topRow: {

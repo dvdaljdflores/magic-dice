@@ -91,34 +91,46 @@ export function UIControls({
 
   function closeAll() { setTurnOpen(false); setPhaseOpen(false); setHistOpen(false); }
 
-  // ── Turn dropdown ──────────────────────────────────────────────────────
-  const turnDropdown = (
-    <div style={{ position: 'relative' }}>
-      <button
-        style={{ ...s.dropBtn, ...(turnOpen ? s.dropBtnOpen : {}) }}
-        onClick={() => { setTurnOpen(o => !o); setPhaseOpen(false); setHistOpen(false); }}
-        title="Seleccionar turno"
+// ── Turn dropdown ──────────────────────────────────────────────────────
+const turnDropdown = (
+  <div style={{ position: 'relative', zIndex: 2000 }}>
+    <button
+      style={{ ...s.dropBtn, ...(turnOpen ? s.dropBtnOpen : {}) }}
+      onClick={() => { setTurnOpen(o => !o); setPhaseOpen(false); setHistOpen(false); }}
+      title="Seleccionar turno"
+    >
+      T{currentTurn} ▾
+    </button>
+
+    {turnOpen && (
+      <div
+        style={{
+          ...s.dropMenu,
+          position: 'absolute',
+          top: '100%',
+          left: 0,
+          zIndex: 3000
+        }}
       >
-        T{currentTurn} ▾
-      </button>
-      {turnOpen && (
-        <>
-          <div style={s.backdrop} onClick={closeAll} />
-          <div style={isMobile ? s.dropMenuMobile : s.dropMenu}>
-            {TURNS.map(t => (
-              <button
-                key={t}
-                style={{ ...(isMobile ? s.dropItemMobile : s.dropItem), ...(currentTurn === t ? s.dropItemActive : {}) }}
-                onClick={() => { onTurnChange(t); setTurnOpen(false); }}
-              >
-                Turno {t}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
+        {Array.from({ length: 10 }, (_, i) => {
+          const t = i + 1;
+          return (
+            <button
+              key={t}
+              style={s.dropItem}
+              onClick={() => {
+                onTurnChange(t);
+                setTurnOpen(false);
+              }}
+            >
+              Turno {t}
+            </button>
+          );
+        })}
+      </div>
+    )}
+  </div>
+);
 
   // ── Phase dropdown ─────────────────────────────────────────────────────
   const phaseDropdown = (

@@ -1,5 +1,8 @@
 /**
- * LAYER 2/6 — ResultsPanel: Left panel — always visible
+ * LAYER 2/6 — ResultsPanel: Left panel (desktop) / Bottom sheet (mobile)
+ *
+ * Desktop: absolute left panel, 240px wide, below UIControls bar.
+ * Mobile:  fixed bottom sheet — collapsed 56px (tap to expand), expanded 50vh.
  *
  * Shows 6 fixed face-value rows. Each row has:
  *   del-N  roll-N  sus (sustained hits)  let (toggle lethal)
@@ -31,6 +34,7 @@ interface ResultsPanelProps {
   onToggleLethal:    (faceValue: number) => void;
   onUndo:            () => void;
   canUndo:           boolean;
+  isMobile:          boolean;
 }
 
 const COLOR_HEX: Record<DieColor, string> = {
@@ -74,9 +78,10 @@ export function ResultsPanel({
   rollResult, activeMask, lethalMask, dieColor, history, gamePhase,
   sustainedX, onSustainedXChange,
   onDelete, onReroll, onSustainedHits, onToggleLethal,
-  onUndo, canUndo,
+  onUndo, canUndo, isMobile,
 }: ResultsPanelProps) {
   const [modalEntry, setModalEntry] = useState<RollHistoryEntry | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   const dipColor   = COLOR_HEX[dieColor];
   const hasResult  = rollResult !== null;
@@ -119,7 +124,6 @@ export function ResultsPanel({
     return cnt > 0 && getLethalCount(v) === cnt;
   }
 
-  // Count of dice that would be deleted/rerolled by clicking ≤v button
   function getDeleteableCount(v: number): number {
     if (!rollResult) return 0;
     let n = 0;
@@ -136,9 +140,10 @@ export function ResultsPanel({
 
   const totalActive = FACES.reduce((acc, v) => acc + getFaceCount(v), 0);
 
-  return (
-    <div style={s.panel}>
-      {/* ── SUS × selector + Regresar ──────────────────────────────────── */}
+  // ── Shared inner content ─────────────────────────────────────────────────
+  const innerContent = (
+    <>
+      {/* SUS × selector + Regresar */}
       <div style={s.topRow}>
         <div style={s.susRow}>
           <span style={s.susLabel}>SUS ×</span>
@@ -157,13 +162,13 @@ export function ResultsPanel({
           style={{ ...s.undoBtn, opacity: canUndo ? 1 : 0.35 }}
           disabled={!canUndo}
           onClick={onUndo}
-          title="Deshacer última acción"
+          title={canUndo ? 'Deshacer última acción' : 'Nada que deshacer (solo funciona tras del/roll/let/sus)'}
         >
           ↩ Regresar
         </button>
       </div>
 
-      {/* ── Results ───────────────────────────────────────────────────── */}
+      {/* Results */}
       <div style={s.sectionHead}>RESULTADO</div>
 
       {busy && (
@@ -182,7 +187,6 @@ export function ResultsPanel({
 
             return (
               <tr key={v} style={s.row}>
-                {/* Face icon + value */}
                 <td style={s.face}>
                   <span style={{ color: dipColor, fontSize: 16, lineHeight: 1 }}>
                     {faceEmoji(v)}
@@ -190,7 +194,6 @@ export function ResultsPanel({
                   <span style={s.faceNum}>{v}</span>
                 </td>
 
-                {/* Count — hidden during animation */}
                 <td style={s.cnt}>
                   {busy
                     ? <span style={{ color: '#1a3a5a' }}>···</span>
@@ -200,20 +203,18 @@ export function ResultsPanel({
                   }
                 </td>
 
-                {/* Lethal badge */}
                 <td style={s.lethalCell}>
                   {inArranged && lethalCnt > 0 && (
-                    <span style={s.lethalBadge} title={`${lethalCnt} letales (Mortal Wounds)`}>
+                    <span style={s.lethalBadge} title={`${lethalCnt} letales`}>
                       ☠{lethalCnt}
                     </span>
                   )}
                 </td>
 
-                {/* Action buttons */}
                 <td style={s.actions}>
                   <button
                     style={{ ...s.actBtn, color: hasResult && delCount > 0 && !busy ? '#ff5555' : '#2a3a50' }}
-                    title={`Eliminar todos los dados ≤${v} (${delCount} dados)`}
+                    title={`Eliminar todos los dados ≤${v} (${delCount})`}
                     onClick={() => onDelete(v)}
                     disabled={busy || !hasResult || delCount === 0}
                   >
@@ -221,7 +222,7 @@ export function ResultsPanel({
                   </button>
                   <button
                     style={{ ...s.actBtn, color: hasResult && rollCount > 0 && !busy ? '#00d4ff' : '#2a3a50' }}
-                    title={`Re-tirar dados ≤${v} (excluye letales, ${rollCount} dados)`}
+                    title={`Re-tirar dados ≤${v} (${rollCount})`}
                     onClick={() => onReroll(v)}
                     disabled={busy || !hasResult || rollCount === 0}
                   >
@@ -263,7 +264,7 @@ export function ResultsPanel({
         </div>
       )}
 
-      {/* ── History ───────────────────────────────────────────────────── */}
+      {/* History */}
       <div style={{ ...s.sectionHead, marginTop: 10 }}>HISTORIAL</div>
 
       {history.length === 0 ? (
@@ -310,49 +311,94 @@ export function ResultsPanel({
           })}
         </div>
       )}
+    </>
+  );
 
-      {/* ── History modal ─────────────────────────────────────────────── */}
-      {modalEntry && (() => {
-        const pLabel   = phaseLabel(modalEntry.phase);
-        const isAction = !!modalEntry.actionLabel;
-        const title    = isAction
-          ? modalEntry.actionLabel!
-          : `Turno ${modalEntry.turn}${pLabel ? ` · ${pLabel}` : ''}${modalEntry.isReroll ? ' · Repetida' : ''}`;
-        const counts: Record<number, number> = {};
-        for (const v of modalEntry.values) counts[v] = (counts[v] ?? 0) + 1;
+  // ── Modal ────────────────────────────────────────────────────────────────
+  const modal = modalEntry && (() => {
+    const pLabel   = phaseLabel(modalEntry.phase);
+    const isAction = !!modalEntry.actionLabel;
+    const title    = isAction
+      ? modalEntry.actionLabel!
+      : `Turno ${modalEntry.turn}${pLabel ? ` · ${pLabel}` : ''}${modalEntry.isReroll ? ' · Repetida' : ''}`;
+    const counts: Record<number, number> = {};
+    for (const v of modalEntry.values) counts[v] = (counts[v] ?? 0) + 1;
 
-        return (
-          <div style={s.modalOverlay} onClick={() => setModalEntry(null)}>
-            <div style={s.modalCard} onClick={e => e.stopPropagation()}>
-              <button style={s.modalClose} onClick={() => setModalEntry(null)}>✕</button>
-              <div style={s.modalHeader}>
-                <span style={histDotStyle(COLOR_HEX[modalEntry.color])} />
-                <span style={{
-                  color: isAction ? '#9966cc' : modalEntry.isReroll ? '#c9a84c' : '#4a7aaa',
-                  fontSize: 14, fontWeight: 700,
-                }}>
-                  {title}
-                </span>
-              </div>
-              <div style={s.modalTime}>{formatTime(modalEntry.timestamp)}</div>
-              <div style={s.modalGrid}>
-                {[1,2,3,4,5,6].filter(v => counts[v]).map(v => (
-                  <div key={v} style={s.modalFaceBox}>
-                    <span style={s.modalEmoji}>{faceEmoji(v)}</span>
-                    <span style={s.modalFaceCount}>×{counts[v]}</span>
-                  </div>
-                ))}
-              </div>
-              {modalEntry.diceCount > 0 && (
-                <div style={s.modalTotal}>
-                  {modalEntry.diceCount} dado{modalEntry.diceCount !== 1 ? 's' : ''}
-                </div>
-              )}
-            </div>
+    return (
+      <div style={s.modalOverlay} onClick={() => setModalEntry(null)}>
+        <div style={s.modalCard} onClick={e => e.stopPropagation()}>
+          <button style={s.modalClose} onClick={() => setModalEntry(null)}>✕</button>
+          <div style={s.modalHeader}>
+            <span style={histDotStyle(COLOR_HEX[modalEntry.color])} />
+            <span style={{
+              color: isAction ? '#9966cc' : modalEntry.isReroll ? '#c9a84c' : '#4a7aaa',
+              fontSize: 14, fontWeight: 700,
+            }}>
+              {title}
+            </span>
           </div>
-        );
-      })()}
-    </div>
+          <div style={s.modalTime}>{formatTime(modalEntry.timestamp)}</div>
+          <div style={s.modalGrid}>
+            {[1,2,3,4,5,6].filter(v => counts[v]).map(v => (
+              <div key={v} style={s.modalFaceBox}>
+                <span style={s.modalEmoji}>{faceEmoji(v)}</span>
+                <span style={s.modalFaceCount}>×{counts[v]}</span>
+              </div>
+            ))}
+          </div>
+          {modalEntry.diceCount > 0 && (
+            <div style={s.modalTotal}>
+              {modalEntry.diceCount} dado{modalEntry.diceCount !== 1 ? 's' : ''}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  })();
+
+  // ── Mobile: bottom sheet ─────────────────────────────────────────────────
+  if (isMobile) {
+    return (
+      <>
+        <div style={{
+          ...s.sheetBase,
+          height: expanded ? '50vh' : 56,
+        }}>
+          {/* Handle / collapsed summary */}
+          <div style={s.sheetHandle} onClick={() => setExpanded(v => !v)}>
+            <span style={s.sheetChevron}>{expanded ? '▼' : '▲'}</span>
+            {!expanded && (
+              <span style={s.sheetSummary}>
+                {busy
+                  ? spinningLabel(gamePhase)
+                  : hasResult
+                    ? `${totalActive} activos${FACES.filter(v => getLethalCount(v) > 0).length > 0 ? ' · ☠lethal' : ''}`
+                    : 'sin tirada'}
+              </span>
+            )}
+            {expanded && <span style={s.sheetTitle}>RESULTADO</span>}
+          </div>
+
+          {/* Scrollable content */}
+          {expanded && (
+            <div style={s.sheetContent}>
+              {innerContent}
+            </div>
+          )}
+        </div>
+        {modal}
+      </>
+    );
+  }
+
+  // ── Desktop: left panel ──────────────────────────────────────────────────
+  return (
+    <>
+      <div style={s.panel}>
+        {innerContent}
+      </div>
+      {modal}
+    </>
   );
 }
 
@@ -374,6 +420,58 @@ const s: Record<string, React.CSSProperties> = {
     display: 'flex', flexDirection: 'column', gap: 2,
     backdropFilter: 'blur(14px)',
     fontFamily: font, zIndex: 50, overflowY: 'auto',
+  },
+  // Mobile bottom sheet
+  sheetBase: {
+    position: 'fixed',
+    bottom: 0, left: 0, right: 0,
+    background: 'rgba(5, 8, 18, 0.97)',
+    borderTop: '1px solid #1a3a5a',
+    backdropFilter: 'blur(14px)',
+    fontFamily: font,
+    zIndex: 200,
+    display: 'flex',
+    flexDirection: 'column',
+    transition: 'height 0.25s ease',
+    overflow: 'hidden',
+  },
+  sheetHandle: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    padding: '0 16px',
+    height: 56,
+    cursor: 'pointer',
+    flexShrink: 0,
+    borderBottom: '1px solid #0e2040',
+    userSelect: 'none',
+  },
+  sheetChevron: {
+    color: '#4a8aaa',
+    fontSize: 12,
+    flexShrink: 0,
+  },
+  sheetSummary: {
+    color: '#c9a84c',
+    fontSize: 13,
+    fontWeight: 700,
+    letterSpacing: 1,
+    fontFamily: font,
+  },
+  sheetTitle: {
+    color: '#2a4a6a',
+    fontSize: 10,
+    letterSpacing: 3,
+    fontWeight: 700,
+    fontFamily: font,
+  },
+  sheetContent: {
+    flex: 1,
+    overflowY: 'auto',
+    padding: '8px 12px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 2,
   },
   topRow: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',

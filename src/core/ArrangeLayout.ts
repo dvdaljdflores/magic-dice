@@ -16,7 +16,7 @@ const BOARD_D       = 16;
 const LETHAL_ZONE_Z = 6.0;
 const NORMAL_Z_MIN  = -7.0;
 const NORMAL_Z_MAX  =  1.5;
-const MAX_PER_STACK = 6;   // dice per horizontal slot before stacking in Y
+const MAX_PER_STACK = 10;  // dice per horizontal slot before stacking in Y
 const LABEL_SPACE   = 2.0; // x units reserved on the left for row labels
 
 /**

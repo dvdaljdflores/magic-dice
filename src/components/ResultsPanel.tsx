@@ -411,12 +411,14 @@ const s: Record<string, React.CSSProperties> = {
   overlay: {
     position: 'absolute',
     bottom: 0, left: 0, right: 0,
+    height: 220,  // must match MOBILE_OVERLAY_H in WarhammerBoard.tsx
     background: 'rgba(4, 7, 16, 0.93)',
     borderTop: '1px solid #1a3a5a',
     backdropFilter: 'blur(12px)',
     padding: '5px 10px 8px',
     fontFamily: font,
     zIndex: 30,
+    overflowY: 'auto',
   },
   // ── Shared ─────────────────────────────────────────────────────────────
   topRow: {

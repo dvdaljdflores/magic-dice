@@ -8,8 +8,8 @@
  *
  * Layout (mobile < 768px):
  *   - Top bar (UIControls): compact single row, ~52px
- *   - Canvas: full width, top=52, bottom=56
- *   - ResultsPanel: fixed bottom sheet (collapsed 56px / expanded 50vh)
+ *   - Canvas: landscape-rotated (CSS rotate 90°) in overflow:hidden container
+ *   - ResultsPanel: fixed-height bottom overlay (220px)
  *
  * All state is managed via Zustand (useDiceStore).
  */
@@ -17,16 +17,31 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { useDiceStore } from '../store/diceStore';
 import { DiceScene } from './DiceScene';
 import { UIControls } from './UIControls';
 import { ResultsPanel } from './ResultsPanel';
 
-const TOP_BAR_H    = 72;
-const LEFT_W       = 240;
-const MOBILE_BAR_H = 52;
+const TOP_BAR_H        = 72;
+const LEFT_W           = 240;
+const MOBILE_BAR_H     = 52;
+const MOBILE_OVERLAY_H = 220;
+
+/**
+ * Adjusts camera.up so the scene renders with +X as up.
+ * Combined with CSS rotate(90deg) on the canvas this produces
+ * a correct landscape view inside a portrait container.
+ */
+function CameraUp({ x, y, z }: { x: number; y: number; z: number }) {
+  const { camera } = useThree();
+  useEffect(() => {
+    camera.up.set(x, y, z);
+    camera.updateMatrixWorld();
+  }, [camera, x, y, z]);
+  return null;
+}
 
 export default function WarhammerBoard() {
   const count        = useDiceStore(s => s.count);
@@ -57,14 +72,20 @@ export default function WarhammerBoard() {
   const animEnabled     = useDiceStore(s => s.animEnabled);
   const setAnimEnabled  = useDiceStore(s => s.setAnimEnabled);
 
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobile,   setIsMobile]   = useState(false);
+  const [windowSize, setWindowSize] = useState({ w: 0, h: 0 });
   const [cameraLocked, setCameraLocked] = useState(false);
 
   useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768);
-    check();
-    window.addEventListener('resize', check);
-    return () => window.removeEventListener('resize', check);
+    const update = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      setIsMobile(w < 768);
+      setWindowSize({ w, h });
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
   }, []);
 
   const canUndo = undoStack.length > 0
@@ -72,41 +93,84 @@ export default function WarhammerBoard() {
     && phase !== 'SETTLING'
     && phase !== 'ARRANGING';
 
-  const canvasStyle = isMobile
-    ? { position: 'absolute' as const, top: MOBILE_BAR_H, left: 0, right: 0, bottom: 0 }
-    : { position: 'absolute' as const, top: TOP_BAR_H, left: LEFT_W, right: 0, bottom: 0 };
+  // ── Mobile canvas geometry (landscape via CSS rotation) ────────────────
+  // The container fills between top bar (52px) and overlay (220px).
+  // We render the Canvas with swapped W/H then CSS-rotate 90deg to get
+  // landscape content inside the portrait container.
+  const containerW = windowSize.w;
+  const containerH = windowSize.h - MOBILE_BAR_H - MOBILE_OVERLAY_H;
+  const mobileCanvasW    = containerH;          // wide in render space
+  const mobileCanvasH    = containerW;          // tall in render space
+  const mobileCanvasLeft = (containerW - containerH) / 2;  // negative
+  const mobileCanvasTop  = (containerH - containerW) / 2;  // positive
+
+  const sceneProps = {
+    count,
+    gamePhase: phase,
+    rollResult,
+    dieColor,
+    activeMask,
+    lethalMask,
+  };
 
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative', background: '#08080f' }}>
 
-      <Canvas
-        shadows
-        camera={{ position: [0, 18, 15], fov: 40, near: 0.5, far: 85 }}
-        gl={{ antialias: true, powerPreference: 'high-performance' }}
-        dpr={[1, 2]}
-        style={canvasStyle}
-      >
-        <fog attach="fog" args={['#08080f', 22, 60]} />
+      {/* ── Mobile canvas: landscape-rotated ──────────────────────────── */}
+      {isMobile && windowSize.w > 0 && (
+        <div style={{
+          position: 'absolute',
+          top: MOBILE_BAR_H,
+          bottom: MOBILE_OVERLAY_H,
+          left: 0, right: 0,
+          overflow: 'hidden',
+        }}>
+          <Canvas
+            shadows
+            camera={{ position: [0, 18, 15], fov: 40, near: 0.5, far: 85 }}
+            gl={{ antialias: true, powerPreference: 'high-performance' }}
+            dpr={[1, 2]}
+            style={{
+              position: 'absolute',
+              width: mobileCanvasW,
+              height: mobileCanvasH,
+              left: mobileCanvasLeft,
+              top: mobileCanvasTop,
+              transform: 'rotate(90deg)',
+              transformOrigin: '50% 50%',
+            }}
+          >
+            <fog attach="fog" args={['#08080f', 22, 60]} />
+            <CameraUp x={1} y={0} z={0} />
+            <DiceScene {...sceneProps} />
+          </Canvas>
+        </div>
+      )}
 
-        <DiceScene
-          count={count}
-          gamePhase={phase}
-          rollResult={rollResult}
-          dieColor={dieColor}
-          activeMask={activeMask}
-          lethalMask={lethalMask}
-        />
+      {/* ── Desktop canvas: unchanged ──────────────────────────────────── */}
+      {!isMobile && (
+        <Canvas
+          shadows
+          camera={{ position: [0, 18, 15], fov: 40, near: 0.5, far: 85 }}
+          gl={{ antialias: true, powerPreference: 'high-performance' }}
+          dpr={[1, 2]}
+          style={{ position: 'absolute', top: TOP_BAR_H, left: LEFT_W, right: 0, bottom: 0 }}
+        >
+          <fog attach="fog" args={['#08080f', 22, 60]} />
 
-        <OrbitControls
-          enabled={!cameraLocked}
-          enablePan={false}
-          minPolarAngle={0.25}
-          maxPolarAngle={Math.PI / 2.1}
-          minDistance={8}
-          maxDistance={38}
-          target={[0, 0, 0]}
-        />
-      </Canvas>
+          <DiceScene {...sceneProps} />
+
+          <OrbitControls
+            enabled={!cameraLocked}
+            enablePan={false}
+            minPolarAngle={0.25}
+            maxPolarAngle={Math.PI / 2.1}
+            minDistance={8}
+            maxDistance={38}
+            target={[0, 0, 0]}
+          />
+        </Canvas>
+      )}
 
       <UIControls
         count={count}

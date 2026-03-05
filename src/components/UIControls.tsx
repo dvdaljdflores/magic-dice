@@ -292,8 +292,34 @@ export function UIControls({
     <div style={s.bar}>
       {/* Row 1 */}
       <div style={s.row1}>
-        {turnDropdown}
-        {phaseDropdown}
+        <div style={s.group}>
+          <span style={s.groupLabel}>Turno</span>
+          {TURNS.map(t => (
+            <button
+              key={t}
+              style={{ ...s.turnBtn, ...(currentTurn === t ? s.turnBtnActive : {}) }}
+              onClick={() => onTurnChange(t)}
+              title={`Turno ${t}`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+
+        <div style={s.sep} />
+
+        <div style={s.group}>
+          {PHASES.map(p => (
+            <button
+              key={p}
+              style={{ ...s.phaseBtn, ...(currentPhase === p ? s.phaseBtnActive : {}) }}
+              onClick={() => onPhaseChange(currentPhase === p ? null : p)}
+              title={WARH_PHASE_LABEL[p]}
+            >
+              {phaseShort(p)}
+            </button>
+          ))}
+        </div>
 
         <div style={s.sep} />
 
@@ -317,7 +343,6 @@ export function UIControls({
         <div style={{ flex: 1 }} />
 
         {fxBtn}
-        {histDropdown}
 
         <button
           style={s.repeatBtn}
@@ -527,6 +552,29 @@ const s: Record<string, React.CSSProperties> = {
   },
   lockOn:  { background: '#1a1000', border: '1px solid #aa8800', color: '#ffcc00' },
   lockOff: { background: '#0d1a2e', border: '1px solid #152a44', color: '#4a6a8a' },
+  // ── Desktop inline Turn / Phase buttons ───────────────────────────────
+  turnBtn: {
+    fontFamily: font,
+    background: '#0d1a2e', border: '1px solid #152a44',
+    borderRadius: 3, color: '#6080a0',
+    padding: '2px 7px', fontSize: 11,
+    fontWeight: 700, cursor: 'pointer',
+  },
+  turnBtnActive: {
+    background: '#001a2e', border: '1px solid #00d4ff',
+    color: '#00d4ff',
+  },
+  phaseBtn: {
+    fontFamily: font,
+    background: '#0d1a2e', border: '1px solid #152a44',
+    borderRadius: 3, color: '#5070a0',
+    padding: '2px 8px', fontSize: 10,
+    fontWeight: 700, cursor: 'pointer',
+  },
+  phaseBtnActive: {
+    background: '#120e00', border: '1px solid #c9a84c',
+    color: '#c9a84c',
+  },
   // ── Dropdown shared ────────────────────────────────────────────────────
   dropBtn: {
     fontFamily: font,

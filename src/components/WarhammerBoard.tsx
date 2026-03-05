@@ -20,6 +20,7 @@ import { useState, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { useDiceStore } from '../store/diceStore';
+import { setMobileLayoutMode } from '../core/ArrangeLayout';
 import { DiceScene } from './DiceScene';
 import { UIControls } from './UIControls';
 import { ResultsPanel } from './ResultsPanel';
@@ -67,6 +68,10 @@ export default function WarhammerBoard() {
     return () => window.removeEventListener('resize', check);
   }, []);
 
+  useEffect(() => {
+    setMobileLayoutMode(isMobile);
+  }, [isMobile]);
+
   const canUndo = undoStack.length > 0
     && phase !== 'ROLLING'
     && phase !== 'SETTLING'
@@ -83,8 +88,8 @@ export default function WarhammerBoard() {
         key={isMobile ? 'mobile' : 'desktop'}
         shadows
         camera={{
-          position: isMobile ? [0, 22, 10] : [0, 18, 15],
-          fov: isMobile ? 55 : 40,
+          position: isMobile ? [0, 24, 9] : [0, 18, 15],
+          fov: isMobile ? 50 : 40,
           near: 0.5,
           far: 85,
         }}

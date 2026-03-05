@@ -525,19 +525,22 @@ const s: Record<string, React.CSSProperties> = {
     overflowY: 'auto',
   },
   actionRow: {
-    display: 'flex', alignItems: 'center', gap: 4,
+    display: 'grid',
+    gridTemplateColumns: 'auto auto auto auto auto auto',
+    gap: 6,
+    alignItems: 'center',
   },
   actionCnt: {
-    color: '#c9a84c', fontSize: 12, fontWeight: 700,
-    minWidth: 16, fontFamily: font,
+    color: '#c9a84c', fontSize: 11, fontWeight: 700,
+    minWidth: 14, fontFamily: font,
   },
   mActBtn: {
     background: 'none', border: 'none',
-    fontSize: 14, fontFamily: font,
+    fontSize: 13, fontFamily: font,
     fontWeight: 700, cursor: 'pointer',
-    padding: '8px 10px', letterSpacing: 0.3,
+    padding: '4px 6px', letterSpacing: 0.3,
     textTransform: 'uppercase' as const, lineHeight: 1,
-    minHeight: 40,
+    minHeight: 28,
   },
   // ── Mobile: toggle chip ────────────────────────────────────────────────
   chipWrap: {

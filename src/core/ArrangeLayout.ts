@@ -4,6 +4,9 @@
  * Pure function that computes target positions and quaternions for the
  * ARRANGED display. Dice are left-aligned per face-value row, stacking
  * in Y when more than MAX_PER_STACK share the same value.
+ *
+ * Mobile layout mode (set via setMobileLayoutMode):
+ *   BOARD_W = 16, BOARD_D = 22 — uses vertical space better on portrait screens.
  */
 
 import type { ArrangeTarget } from './types';
@@ -18,6 +21,23 @@ const NORMAL_Z_MIN  = -7.0;
 const NORMAL_Z_MAX  =  1.5;
 const MAX_PER_STACK = 10;  // dice per horizontal slot before stacking in Y
 const LABEL_SPACE   = 2.0; // x units reserved on the left for row labels
+
+// Mobile variants (portrait orientation — more Z depth, less X width)
+const BOARD_W_M      = 16;
+const BOARD_D_M      = 22;
+const NORMAL_Z_MIN_M = -10.0; // when hasLethal, avoids zone at z=6
+const NORMAL_Z_MAX_M =   3.0;
+
+/** Module-level flag set by WarhammerBoard. Defaults to false (desktop). */
+let _mobileMode = false;
+
+/**
+ * Call this from WarhammerBoard whenever isMobile changes.
+ * Subsequent computeArrangeTargets calls will use the matching layout.
+ */
+export function setMobileLayoutMode(mobile: boolean): void {
+  _mobileMode = mobile;
+}
 
 /**
  * Compute arranged positions and quaternions for each active die.
@@ -34,10 +54,13 @@ export function computeArrangeTargets(
   const targets = new Map<number, ArrangeTarget>();
   if (values.length === 0) return targets;
 
+  const boardW = _mobileMode ? BOARD_W_M : BOARD_W;
+  const boardD = _mobileMode ? BOARD_D_M : BOARD_D;
+
   const colSp  = scale * COL_SP;
   const rowSp  = scale * ROW_SP;
-  const stackH = scale * 0.85;                      // height per stack level
-  const leftX  = -(BOARD_W / 2) + LABEL_SPACE + scale / 2; // first die x
+  const stackH = scale * 0.85;                       // height per stack level
+  const leftX  = -(boardW / 2) + LABEL_SPACE + scale / 2; // first die x
 
   // Group active dice by face value, split normal vs lethal
   const normalGroups: Record<number, number[]> = {};
@@ -55,8 +78,10 @@ export function computeArrangeTargets(
   const normalVals = [1, 2, 3, 4, 5, 6].filter(v => (normalGroups[v]?.length ?? 0) > 0);
   if (normalVals.length > 0) {
     const totalRows = normalVals.length;
-    const zMin  = hasLethal ? NORMAL_Z_MIN : -(BOARD_D / 2 - scale);
-    const zMax  = hasLethal ? NORMAL_Z_MAX :  (BOARD_D / 2 - scale);
+    const zMinDefault = _mobileMode ? NORMAL_Z_MIN_M : NORMAL_Z_MIN;
+    const zMaxDefault = _mobileMode ? NORMAL_Z_MAX_M : NORMAL_Z_MAX;
+    const zMin  = hasLethal ? zMinDefault : -(boardD / 2 - scale);
+    const zMax  = hasLethal ? zMaxDefault :  (boardD / 2 - scale);
     const avail = zMax - zMin;
     const span  = (totalRows - 1) * rowSp;
     let   z     = zMin + Math.max(0, (avail - span) / 2);

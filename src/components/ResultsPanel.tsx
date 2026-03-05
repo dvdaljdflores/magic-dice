@@ -1,14 +1,10 @@
 /**
- * LAYER 2/6 — ResultsPanel: Left panel (desktop) / Bottom sheet (mobile)
+ * LAYER 2/6 — ResultsPanel
  *
- * Desktop: absolute left panel, 240px wide, below UIControls bar.
- * Mobile:  fixed bottom sheet — collapsed 56px (tap to expand), expanded 50vh.
- *
- * Shows 6 fixed face-value rows. Each row has:
- *   del-N  roll-N  sus (sustained hits)  let (toggle lethal)
- * del/roll affect all dice with value ≤ N.
- * Counts hidden during animation.
- * "Regresar" button undoes last action.
+ * Desktop: absolute left panel (240px), includes history.
+ * Mobile:  compact floating overlay at the bottom of the canvas.
+ *          History is in the top-bar history dropdown (UIControls).
+ *          Not shown in PREVIEW (canvas fully visible until first throw).
  */
 
 'use client';
@@ -81,7 +77,6 @@ export function ResultsPanel({
   onUndo, canUndo, isMobile,
 }: ResultsPanelProps) {
   const [modalEntry, setModalEntry] = useState<RollHistoryEntry | null>(null);
-  const [expanded, setExpanded] = useState(false);
 
   const dipColor   = COLOR_HEX[dieColor];
   const hasResult  = rollResult !== null;
@@ -140,181 +135,80 @@ export function ResultsPanel({
 
   const totalActive = FACES.reduce((acc, v) => acc + getFaceCount(v), 0);
 
-  // ── Shared inner content ─────────────────────────────────────────────────
-  const innerContent = (
-    <>
-      {/* SUS × selector + Regresar */}
-      <div style={s.topRow}>
-        <div style={s.susRow}>
-          <span style={s.susLabel}>SUS ×</span>
-          {([1, 2, 3] as SustainedX[]).map(x => (
-            <button
-              key={x}
-              style={{ ...s.susBtn, ...(sustainedX === x ? s.susBtnActive : {}) }}
-              onClick={() => onSustainedXChange(x)}
-            >
-              {x}
-            </button>
-          ))}
-        </div>
+  // ── Results table (shared between desktop and mobile) ─────────────────
+  const resultsTable = (
+    <table style={s.table}>
+      <tbody>
+        {FACES.map(v => {
+          const cnt         = getFaceCount(v);
+          const rerollable  = getRerollableCount(v);
+          const lethalCnt   = getLethalCount(v);
+          const groupLethal = isGroupLethal(v);
+          const delCount    = getDeleteableCount(v);
+          const rollCount   = getRerollableBelowCount(v);
 
-        <button
-          style={{ ...s.undoBtn, opacity: canUndo ? 1 : 0.35 }}
-          disabled={!canUndo}
-          onClick={onUndo}
-          title={canUndo ? 'Deshacer última acción' : 'Nada que deshacer (solo funciona tras del/roll/let/sus)'}
-        >
-          ↩ Regresar
-        </button>
-      </div>
+          return (
+            <tr key={v} style={s.row}>
+              <td style={s.face}>
+                <span style={{ color: dipColor, fontSize: 16, lineHeight: 1 }}>
+                  {faceEmoji(v)}
+                </span>
+                <span style={s.faceNum}>{v}</span>
+              </td>
 
-      {/* Results */}
-      <div style={s.sectionHead}>RESULTADO</div>
+              <td style={s.cnt}>
+                {busy
+                  ? <span style={{ color: '#1a3a5a' }}>···</span>
+                  : cnt > 0
+                    ? <span>{`× ${cnt}`}</span>
+                    : <span style={{ color: '#2a3a50' }}>—</span>
+                }
+              </td>
 
-      {busy && (
-        <div style={s.animStatus}>{spinningLabel(gamePhase)}</div>
-      )}
-
-      <table style={s.table}>
-        <tbody>
-          {FACES.map(v => {
-            const cnt         = getFaceCount(v);
-            const rerollable  = getRerollableCount(v);
-            const lethalCnt   = getLethalCount(v);
-            const groupLethal = isGroupLethal(v);
-            const delCount    = getDeleteableCount(v);
-            const rollCount   = getRerollableBelowCount(v);
-
-            return (
-              <tr key={v} style={s.row}>
-                <td style={s.face}>
-                  <span style={{ color: dipColor, fontSize: 16, lineHeight: 1 }}>
-                    {faceEmoji(v)}
-                  </span>
-                  <span style={s.faceNum}>{v}</span>
-                </td>
-
-                <td style={s.cnt}>
-                  {busy
-                    ? <span style={{ color: '#1a3a5a' }}>···</span>
-                    : cnt > 0
-                      ? <span>{`× ${cnt}`}</span>
-                      : <span style={{ color: '#2a3a50' }}>—</span>
-                  }
-                </td>
-
-                <td style={s.lethalCell}>
-                  {inArranged && lethalCnt > 0 && (
-                    <span style={s.lethalBadge} title={`${lethalCnt} letales`}>
-                      ☠{lethalCnt}
-                    </span>
-                  )}
-                </td>
-
-                <td style={s.actions}>
-                  <button
-                    style={{ ...s.actBtn, color: hasResult && delCount > 0 && !busy ? '#ff5555' : '#2a3a50' }}
-                    title={`Eliminar todos los dados ≤${v} (${delCount})`}
-                    onClick={() => onDelete(v)}
-                    disabled={busy || !hasResult || delCount === 0}
-                  >
-                    del
-                  </button>
-                  <button
-                    style={{ ...s.actBtn, color: hasResult && rollCount > 0 && !busy ? '#00d4ff' : '#2a3a50' }}
-                    title={`Re-tirar dados ≤${v} (${rollCount})`}
-                    onClick={() => onReroll(v)}
-                    disabled={busy || !hasResult || rollCount === 0}
-                  >
-                    roll
-                  </button>
-                  <button
-                    style={{ ...s.actBtn, color: inArranged && rerollable > 0 ? '#44cc88' : '#2a3a50' }}
-                    title={`Sustained Hits ×${sustainedX} para ${v}s`}
-                    onClick={() => onSustainedHits(v)}
-                    disabled={!inArranged || rerollable === 0}
-                  >
-                    sus
-                  </button>
-                  <button
-                    style={{
-                      ...s.actBtn,
-                      color: groupLethal
-                        ? '#cc44ff'
-                        : hasResult && cnt > 0 && !busy ? '#884488' : '#2a3a50',
-                      fontWeight: groupLethal ? 900 : 700,
-                    }}
-                    title={groupLethal ? `Quitar lethal de ${v}s` : `Marcar ${v}s como Mortal Wounds`}
-                    onClick={() => onToggleLethal(v)}
-                    disabled={busy || !hasResult || cnt === 0}
-                  >
-                    {groupLethal ? '☠let' : 'let'}
-                  </button>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-
-      {inArranged && hasResult && (
-        <div style={s.total}>
-          <span style={{ color: '#3a5a7a' }}>TOTAL ACTIVOS</span>
-          <span style={{ color: '#c9a84c', fontWeight: 700 }}>{totalActive}</span>
-        </div>
-      )}
-
-      {/* History */}
-      <div style={{ ...s.sectionHead, marginTop: 10 }}>HISTORIAL</div>
-
-      {history.length === 0 ? (
-        <div style={s.histEmpty}>sin tiradas aún</div>
-      ) : (
-        <div style={s.histList}>
-          {[...history].reverse().map(entry => {
-            const pLabel   = phaseLabel(entry.phase);
-            const isAction = !!entry.actionLabel;
-            const title    = isAction
-              ? entry.actionLabel!
-              : `Turno ${entry.turn}${pLabel ? ` (${pLabel})` : ''}${entry.isReroll ? ' · rep.' : ''}`;
-            const valStr   = formatHistoryValues(entry.values);
-
-            return (
-              <div
-                key={entry.id}
-                style={{ ...s.histBlock, cursor: 'pointer' }}
-                onClick={() => setModalEntry(entry)}
-              >
-                <div style={s.histTitle}>
-                  <span style={histDotStyle(COLOR_HEX[entry.color])} />
-                  <span style={{
-                    color: isAction
-                      ? '#9966cc'
-                      : entry.isReroll ? '#c9a84c' : '#4a7aaa',
-                  }}>
-                    {title}
-                  </span>
-                  <span style={{ color: '#2a3a50', marginLeft: 'auto', fontSize: 9 }}>
-                    {formatTime(entry.timestamp)}
-                  </span>
-                </div>
-                {valStr && (
-                  <div style={s.histValues}>{valStr}</div>
+              <td style={s.lethalCell}>
+                {inArranged && lethalCnt > 0 && (
+                  <span style={s.lethalBadge} title={`${lethalCnt} letales`}>☠{lethalCnt}</span>
                 )}
-                {entry.diceCount > 0 && (
-                  <div style={{ color: '#2a4060', fontSize: 8, paddingLeft: 11 }}>
-                    {entry.diceCount} dado{entry.diceCount !== 1 ? 's' : ''}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </>
+              </td>
+
+              <td style={s.actions}>
+                <button
+                  style={{ ...s.actBtn, color: hasResult && delCount > 0 && !busy ? '#ff5555' : '#2a3a50' }}
+                  title={`Eliminar todos los dados ≤${v} (${delCount})`}
+                  onClick={() => onDelete(v)}
+                  disabled={busy || !hasResult || delCount === 0}
+                >del</button>
+                <button
+                  style={{ ...s.actBtn, color: hasResult && rollCount > 0 && !busy ? '#00d4ff' : '#2a3a50' }}
+                  title={`Re-tirar dados ≤${v} (${rollCount})`}
+                  onClick={() => onReroll(v)}
+                  disabled={busy || !hasResult || rollCount === 0}
+                >roll</button>
+                <button
+                  style={{ ...s.actBtn, color: inArranged && rerollable > 0 ? '#44cc88' : '#2a3a50' }}
+                  title={`Sustained Hits ×${sustainedX} para ${v}s`}
+                  onClick={() => onSustainedHits(v)}
+                  disabled={!inArranged || rerollable === 0}
+                >sus</button>
+                <button
+                  style={{
+                    ...s.actBtn,
+                    color: groupLethal ? '#cc44ff' : hasResult && cnt > 0 && !busy ? '#884488' : '#2a3a50',
+                    fontWeight: groupLethal ? 900 : 700,
+                  }}
+                  title={groupLethal ? `Quitar lethal de ${v}s` : `Marcar ${v}s como Mortal Wounds`}
+                  onClick={() => onToggleLethal(v)}
+                  disabled={busy || !hasResult || cnt === 0}
+                >{groupLethal ? '☠let' : 'let'}</button>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 
-  // ── Modal ────────────────────────────────────────────────────────────────
+  // ── Modal (shared) ─────────────────────────────────────────────────────
   const modal = modalEntry && (() => {
     const pLabel   = phaseLabel(modalEntry.phase);
     const isAction = !!modalEntry.actionLabel;
@@ -323,13 +217,11 @@ export function ResultsPanel({
       : `Turno ${modalEntry.turn}${pLabel ? ` · ${pLabel}` : ''}${modalEntry.isReroll ? ' · Repetida' : ''}`;
     const counts: Record<number, number> = {};
     for (const v of modalEntry.values) counts[v] = (counts[v] ?? 0) + 1;
-
     return (
       <div style={s.modalOverlay} onClick={() => setModalEntry(null)}>
         <div style={s.modalCard} onClick={e => e.stopPropagation()}>
           <button style={s.modalClose} onClick={() => setModalEntry(null)}>✕</button>
           <div style={s.modalHeader}>
-            <span style={histDotStyle(COLOR_HEX[modalEntry.color])} />
             <span style={{
               color: isAction ? '#9966cc' : modalEntry.isReroll ? '#c9a84c' : '#4a7aaa',
               fontSize: 14, fontWeight: 700,
@@ -356,46 +248,139 @@ export function ResultsPanel({
     );
   })();
 
-  // ── Mobile: bottom sheet ─────────────────────────────────────────────────
+  // ── Mobile: compact overlay over canvas bottom ─────────────────────────
+  // Hidden in PREVIEW (canvas fully visible). Shown as soon as there's a result.
   if (isMobile) {
+    if (!hasResult) return null;
     return (
       <>
-        <div style={{
-          ...s.sheetBase,
-          height: expanded ? '50vh' : 56,
-        }}>
-          {/* Handle / collapsed summary */}
-          <div style={s.sheetHandle} onClick={() => setExpanded(v => !v)}>
-            <span style={s.sheetChevron}>{expanded ? '▼' : '▲'}</span>
-            {!expanded && (
-              <span style={s.sheetSummary}>
-                {busy
-                  ? spinningLabel(gamePhase)
-                  : hasResult
-                    ? `${totalActive} activos${FACES.filter(v => getLethalCount(v) > 0).length > 0 ? ' · ☠lethal' : ''}`
-                    : 'sin tirada'}
+        <div style={s.overlay}>
+          {/* SUS × + Regresar */}
+          <div style={s.topRow}>
+            <div style={s.susRow}>
+              <span style={s.susLabel}>SUS×</span>
+              {([1, 2, 3] as SustainedX[]).map(x => (
+                <button
+                  key={x}
+                  style={{ ...s.susBtn, ...(sustainedX === x ? s.susBtnActive : {}) }}
+                  onClick={() => onSustainedXChange(x)}
+                >
+                  {x}
+                </button>
+              ))}
+            </div>
+
+            {busy && <span style={s.animStatus}>{spinningLabel(gamePhase)}</span>}
+
+            {inArranged && hasResult && (
+              <span style={s.totalLabel}>
+                <span style={{ color: '#3a5a7a' }}>TOTAL </span>
+                <span style={{ color: '#c9a84c', fontWeight: 700 }}>{totalActive}</span>
               </span>
             )}
-            {expanded && <span style={s.sheetTitle}>RESULTADO</span>}
+
+            <button
+              style={{ ...s.undoBtn, opacity: canUndo ? 1 : 0.35 }}
+              disabled={!canUndo}
+              onClick={onUndo}
+              title={canUndo ? 'Deshacer' : 'Nada que deshacer (solo del/roll/let/sus)'}
+            >
+              ↩
+            </button>
           </div>
 
-          {/* Scrollable content */}
-          {expanded && (
-            <div style={s.sheetContent}>
-              {innerContent}
-            </div>
-          )}
+          {resultsTable}
         </div>
         {modal}
       </>
     );
   }
 
-  // ── Desktop: left panel ──────────────────────────────────────────────────
+  // ── Desktop: left panel ────────────────────────────────────────────────
   return (
     <>
       <div style={s.panel}>
-        {innerContent}
+        {/* SUS × + Regresar */}
+        <div style={s.topRow}>
+          <div style={s.susRow}>
+            <span style={s.susLabel}>SUS ×</span>
+            {([1, 2, 3] as SustainedX[]).map(x => (
+              <button
+                key={x}
+                style={{ ...s.susBtn, ...(sustainedX === x ? s.susBtnActive : {}) }}
+                onClick={() => onSustainedXChange(x)}
+              >
+                {x}
+              </button>
+            ))}
+          </div>
+
+          <button
+            style={{ ...s.undoBtn, opacity: canUndo ? 1 : 0.35 }}
+            disabled={!canUndo}
+            onClick={onUndo}
+            title={canUndo ? 'Deshacer última acción' : 'Nada que deshacer (solo del/roll/let/sus)'}
+          >
+            ↩ Regresar
+          </button>
+        </div>
+
+        <div style={s.sectionHead}>RESULTADO</div>
+
+        {busy && <div style={s.animStatusDesktop}>{spinningLabel(gamePhase)}</div>}
+
+        {resultsTable}
+
+        {inArranged && hasResult && (
+          <div style={s.total}>
+            <span style={{ color: '#3a5a7a' }}>TOTAL ACTIVOS</span>
+            <span style={{ color: '#c9a84c', fontWeight: 700 }}>{totalActive}</span>
+          </div>
+        )}
+
+        {/* History (desktop only) */}
+        <div style={{ ...s.sectionHead, marginTop: 10 }}>HISTORIAL</div>
+
+        {history.length === 0 ? (
+          <div style={s.histEmpty}>sin tiradas aún</div>
+        ) : (
+          <div style={s.histList}>
+            {[...history].reverse().map(entry => {
+              const pLabel   = phaseLabel(entry.phase);
+              const isAction = !!entry.actionLabel;
+              const title    = isAction
+                ? entry.actionLabel!
+                : `Turno ${entry.turn}${pLabel ? ` (${pLabel})` : ''}${entry.isReroll ? ' · rep.' : ''}`;
+              const valStr   = formatHistoryValues(entry.values);
+
+              return (
+                <div
+                  key={entry.id}
+                  style={{ ...s.histBlock, cursor: 'pointer' }}
+                  onClick={() => setModalEntry(entry)}
+                >
+                  <div style={s.histTitle}>
+                    <span style={histDotStyle(COLOR_HEX[entry.color])} />
+                    <span style={{
+                      color: isAction ? '#9966cc' : entry.isReroll ? '#c9a84c' : '#4a7aaa',
+                    }}>
+                      {title}
+                    </span>
+                    <span style={{ color: '#2a3a50', marginLeft: 'auto', fontSize: 9 }}>
+                      {formatTime(entry.timestamp)}
+                    </span>
+                  </div>
+                  {valStr && <div style={s.histValues}>{valStr}</div>}
+                  {entry.diceCount > 0 && (
+                    <div style={{ color: '#2a4060', fontSize: 8, paddingLeft: 11 }}>
+                      {entry.diceCount} dado{entry.diceCount !== 1 ? 's' : ''}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
       {modal}
     </>
@@ -412,6 +397,7 @@ function histDotStyle(color: string): React.CSSProperties {
 }
 
 const s: Record<string, React.CSSProperties> = {
+  // ── Desktop left panel ─────────────────────────────────────────────────
   panel: {
     position: 'absolute', left: 0, top: 72, bottom: 0, width: 240,
     background: 'rgba(5, 8, 18, 0.95)',
@@ -421,65 +407,23 @@ const s: Record<string, React.CSSProperties> = {
     backdropFilter: 'blur(14px)',
     fontFamily: font, zIndex: 50, overflowY: 'auto',
   },
-  // Mobile bottom sheet
-  sheetBase: {
-    position: 'fixed',
+  // ── Mobile overlay ─────────────────────────────────────────────────────
+  overlay: {
+    position: 'absolute',
     bottom: 0, left: 0, right: 0,
-    background: 'rgba(5, 8, 18, 0.97)',
+    background: 'rgba(4, 7, 16, 0.93)',
     borderTop: '1px solid #1a3a5a',
-    backdropFilter: 'blur(14px)',
+    backdropFilter: 'blur(12px)',
+    padding: '5px 10px 8px',
     fontFamily: font,
-    zIndex: 200,
-    display: 'flex',
-    flexDirection: 'column',
-    transition: 'height 0.25s ease',
-    overflow: 'hidden',
+    zIndex: 30,
   },
-  sheetHandle: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    padding: '0 16px',
-    height: 56,
-    cursor: 'pointer',
-    flexShrink: 0,
-    borderBottom: '1px solid #0e2040',
-    userSelect: 'none',
-  },
-  sheetChevron: {
-    color: '#4a8aaa',
-    fontSize: 12,
-    flexShrink: 0,
-  },
-  sheetSummary: {
-    color: '#c9a84c',
-    fontSize: 13,
-    fontWeight: 700,
-    letterSpacing: 1,
-    fontFamily: font,
-  },
-  sheetTitle: {
-    color: '#2a4a6a',
-    fontSize: 10,
-    letterSpacing: 3,
-    fontWeight: 700,
-    fontFamily: font,
-  },
-  sheetContent: {
-    flex: 1,
-    overflowY: 'auto',
-    padding: '8px 12px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 2,
-  },
+  // ── Shared ─────────────────────────────────────────────────────────────
   topRow: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    marginBottom: 4,
+    gap: 8, marginBottom: 3,
   },
-  susRow: {
-    display: 'flex', alignItems: 'center', gap: 4,
-  },
+  susRow: { display: 'flex', alignItems: 'center', gap: 4 },
   susLabel: {
     color: '#44cc88', fontSize: 9, letterSpacing: 2, fontWeight: 700,
   },
@@ -488,18 +432,22 @@ const s: Record<string, React.CSSProperties> = {
     borderRadius: 3, color: '#44cc88', padding: '1px 6px',
     fontSize: 10, fontWeight: 700, cursor: 'pointer',
   },
-  susBtnActive: {
-    background: '#1a3a20', border: '1px solid #44cc88',
-  },
+  susBtnActive: { background: '#1a3a20', border: '1px solid #44cc88' },
   undoBtn: {
     fontFamily: font, background: '#1a1828', border: '1px solid #3a2a50',
     borderRadius: 3, color: '#9966cc', padding: '2px 7px',
     fontSize: 9, fontWeight: 700, cursor: 'pointer', letterSpacing: 0.5,
+    flexShrink: 0,
   },
   animStatus: {
+    color: '#4a8aaa', fontSize: 9, fontStyle: 'italic', letterSpacing: 1,
+    flex: 1, textAlign: 'center',
+  },
+  animStatusDesktop: {
     color: '#4a8aaa', fontSize: 9, fontStyle: 'italic',
     letterSpacing: 1, padding: '2px 0 4px',
   },
+  totalLabel: { fontSize: 10, letterSpacing: 1, fontFamily: font },
   sectionHead: {
     color: '#2a4a6a', fontSize: 9, letterSpacing: 3, fontWeight: 700,
     paddingBottom: 3, borderBottom: '1px solid #0e2040', marginBottom: 2,
@@ -553,6 +501,7 @@ const s: Record<string, React.CSSProperties> = {
     color: '#3a5a7a', fontSize: 9, lineHeight: 1.4,
     paddingLeft: 11, wordBreak: 'break-word' as const,
   },
+  // ── Modal ──────────────────────────────────────────────────────────────
   modalOverlay: {
     position: 'fixed', inset: 0,
     background: 'rgba(0,0,0,0.72)',
@@ -561,14 +510,10 @@ const s: Record<string, React.CSSProperties> = {
   },
   modalCard: {
     background: 'rgba(6, 10, 22, 0.98)',
-    border: '1px solid #1a3a5a',
-    borderRadius: 8,
-    padding: '24px 28px',
-    minWidth: 300, maxWidth: 420,
-    fontFamily: font,
-    boxShadow: '0 8px 40px rgba(0,0,0,0.8)',
-    position: 'relative',
-    display: 'flex', flexDirection: 'column', gap: 12,
+    border: '1px solid #1a3a5a', borderRadius: 8,
+    padding: '24px 28px', minWidth: 300, maxWidth: 420,
+    fontFamily: font, boxShadow: '0 8px 40px rgba(0,0,0,0.8)',
+    position: 'relative', display: 'flex', flexDirection: 'column', gap: 12,
   },
   modalClose: {
     position: 'absolute', top: 10, right: 12,
@@ -576,28 +521,16 @@ const s: Record<string, React.CSSProperties> = {
     color: '#3a5a7a', fontSize: 16, cursor: 'pointer',
     fontFamily: font, lineHeight: 1,
   },
-  modalHeader: {
-    display: 'flex', alignItems: 'center', gap: 8,
-  },
-  modalTime: {
-    color: '#2a4060', fontSize: 11, letterSpacing: 1,
-  },
-  modalGrid: {
-    display: 'flex', flexWrap: 'wrap' as const, gap: 10,
-    marginTop: 4,
-  },
+  modalHeader: { display: 'flex', alignItems: 'center', gap: 8 },
+  modalTime:   { color: '#2a4060', fontSize: 11, letterSpacing: 1 },
+  modalGrid:   { display: 'flex', flexWrap: 'wrap' as const, gap: 10, marginTop: 4 },
   modalFaceBox: {
     display: 'flex', flexDirection: 'column', alignItems: 'center',
-    background: '#0d1a30', borderRadius: 6,
-    padding: '10px 14px', gap: 4,
+    background: '#0d1a30', borderRadius: 6, padding: '10px 14px', gap: 4,
     border: '1px solid #1a3a5a',
   },
-  modalEmoji: {
-    fontSize: 36, lineHeight: 1,
-  },
-  modalFaceCount: {
-    color: '#c9a84c', fontSize: 18, fontWeight: 700,
-  },
+  modalEmoji:     { fontSize: 36, lineHeight: 1 },
+  modalFaceCount: { color: '#c9a84c', fontSize: 18, fontWeight: 700 },
   modalTotal: {
     color: '#2a4060', fontSize: 11, letterSpacing: 1,
     borderTop: '1px solid #0e2040', paddingTop: 8,

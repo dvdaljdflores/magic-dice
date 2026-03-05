@@ -2,16 +2,17 @@
  * LAYER 1/2 — UIControls: Top control bar
  *
  * Desktop (2 rows):
- *   Row 1: Turno | Phase | Color swatches | FX | Repetir
+ *   Row 1: [T▾] [Fase▾] | Colors | FX | [Hist▾] | Repetir
  *   Row 2: Tirar | +ND6 | Count | Lock | Limpiar
  *
- * Mobile (1 compact row):
- *   Tirar | +1 +5 +10 | colors | FX | Lock | Limpiar
+ * Mobile (1 compact row, scrollable):
+ *   TIRAR | +1 +5 +10 | Nd6 | [T▾] [F▾] [Hist▾] | FX | Lock | ✕
  */
 
 'use client';
 
-import type { GamePhase, DieColor, WarhPhase } from '../core/types';
+import { useState } from 'react';
+import type { GamePhase, DieColor, WarhPhase, RollHistoryEntry } from '../core/types';
 import { WARH_PHASE_LABEL } from '../core/types';
 
 interface UIControlsProps {
@@ -32,6 +33,7 @@ interface UIControlsProps {
   isMobile: boolean;
   cameraLocked: boolean;
   onCameraLockChange: (v: boolean) => void;
+  history: RollHistoryEntry[];
 }
 
 const ADD_PRESETS        = [1, 2, 5, 10, 25];
@@ -52,6 +54,25 @@ const COLOR_SWATCHES: { id: DieColor; hex: string; label: string }[] = [
 
 const font = "'Courier New', Courier, monospace";
 
+function formatTime(ts: number): string {
+  const d = new Date(ts);
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+function formatHistShort(values: number[]): string {
+  if (values.length === 0) return '';
+  const c: Record<number, number> = {};
+  for (const v of values) c[v] = (c[v] ?? 0) + 1;
+  return [1,2,3,4,5,6].filter(v => c[v]).map(v => `${v}×${c[v]}`).join(' ');
+}
+
+// Short label for the phase button: last word of the label
+function phaseShort(p: WarhPhase | null): string {
+  if (!p) return 'Fase';
+  const label = WARH_PHASE_LABEL[p];
+  return label.split(' ').at(-1)!;
+}
+
 export function UIControls({
   count, onAddCount,
   dieColor, onColorChange,
@@ -60,9 +81,137 @@ export function UIControls({
   gamePhase, onThrow, onRepeat, onReset,
   animEnabled, onAnimEnabledChange,
   isMobile, cameraLocked, onCameraLockChange,
+  history,
 }: UIControlsProps) {
+  const [turnOpen,  setTurnOpen]  = useState(false);
+  const [phaseOpen, setPhaseOpen] = useState(false);
+  const [histOpen,  setHistOpen]  = useState(false);
+
   const busy = gamePhase === 'ROLLING' || gamePhase === 'SETTLING' || gamePhase === 'ARRANGING';
 
+  function closeAll() { setTurnOpen(false); setPhaseOpen(false); setHistOpen(false); }
+
+  // ── Turn dropdown ──────────────────────────────────────────────────────
+  const turnDropdown = (
+    <div style={{ position: 'relative' }}>
+      <button
+        style={{ ...s.dropBtn, ...(turnOpen ? s.dropBtnOpen : {}) }}
+        onClick={() => { setTurnOpen(o => !o); setPhaseOpen(false); setHistOpen(false); }}
+        title="Seleccionar turno"
+      >
+        T{currentTurn} ▾
+      </button>
+      {turnOpen && (
+        <>
+          <div style={s.backdrop} onClick={closeAll} />
+          <div style={s.dropMenu}>
+            {TURNS.map(t => (
+              <button
+                key={t}
+                style={{ ...s.dropItem, ...(currentTurn === t ? s.dropItemActive : {}) }}
+                onClick={() => { onTurnChange(t); setTurnOpen(false); }}
+              >
+                Turno {t}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+
+  // ── Phase dropdown ─────────────────────────────────────────────────────
+  const phaseDropdown = (
+    <div style={{ position: 'relative' }}>
+      <button
+        style={{
+          ...s.dropBtn,
+          ...(phaseOpen ? s.dropBtnOpen : {}),
+          ...(currentPhase ? s.dropBtnActive : {}),
+        }}
+        onClick={() => { setPhaseOpen(o => !o); setTurnOpen(false); setHistOpen(false); }}
+        title="Seleccionar fase de Warhammer"
+      >
+        {phaseShort(currentPhase)} ▾
+      </button>
+      {phaseOpen && (
+        <>
+          <div style={s.backdrop} onClick={closeAll} />
+          <div style={{ ...s.dropMenu, minWidth: 160 }}>
+            <button
+              style={{ ...s.dropItem, ...(currentPhase === null ? s.dropItemActive : {}) }}
+              onClick={() => { onPhaseChange(null); setPhaseOpen(false); }}
+            >
+              — ninguna —
+            </button>
+            {PHASES.map(p => (
+              <button
+                key={p}
+                style={{ ...s.dropItem, ...(currentPhase === p ? s.dropItemActive : {}) }}
+                onClick={() => { onPhaseChange(p); setPhaseOpen(false); }}
+              >
+                {WARH_PHASE_LABEL[p]}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+
+  // ── History dropdown ───────────────────────────────────────────────────
+  const histDropdown = (
+    <div style={{ position: 'relative' }}>
+      <button
+        style={{ ...s.dropBtn, ...(histOpen ? s.dropBtnOpen : {}) }}
+        onClick={() => { setHistOpen(o => !o); setTurnOpen(false); setPhaseOpen(false); }}
+        title="Historial de tiradas"
+      >
+        ✦ ▾
+      </button>
+      {histOpen && (
+        <>
+          <div style={s.backdrop} onClick={closeAll} />
+          <div style={{ ...s.dropMenu, right: 0, left: 'auto', width: 260, maxHeight: 360, overflowY: 'auto' }}>
+            <div style={s.histHead}>HISTORIAL</div>
+            {history.length === 0 ? (
+              <div style={s.histEmpty}>sin tiradas aún</div>
+            ) : (
+              [...history].reverse().map(entry => {
+                const isAction = !!entry.actionLabel;
+                const title = isAction
+                  ? entry.actionLabel!
+                  : `T${entry.turn}${entry.isReroll ? ' · rep.' : ''}`;
+                return (
+                  <div key={entry.id} style={s.histItem}>
+                    <div style={s.histItemRow}>
+                      <span style={{
+                        color: isAction ? '#9966cc' : entry.isReroll ? '#c9a84c' : '#4a7aaa',
+                        fontSize: 10, fontWeight: 700,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>
+                        {title}
+                      </span>
+                      <span style={{ color: '#2a3a50', fontSize: 9, flexShrink: 0 }}>
+                        {formatTime(entry.timestamp)}
+                      </span>
+                    </div>
+                    {entry.values.length > 0 && (
+                      <div style={{ color: '#2a4060', fontSize: 9, marginTop: 1 }}>
+                        {formatHistShort(entry.values)}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+
+  // ── Shared buttons ─────────────────────────────────────────────────────
   const lockBtn = (
     <button
       style={{ ...s.lockBtn, ...(cameraLocked ? s.lockOn : s.lockOff) }}
@@ -83,10 +232,10 @@ export function UIControls({
     </button>
   );
 
+  // ── Mobile layout (single row) ─────────────────────────────────────────
   if (isMobile) {
     return (
       <div style={s.barMobile}>
-        {/* Throw */}
         <button
           style={{ ...s.throwBtnMobile, opacity: count > 0 ? 1 : 0.45 }}
           onClick={onThrow}
@@ -97,13 +246,8 @@ export function UIControls({
 
         <div style={s.sep} />
 
-        {/* Add presets */}
         {ADD_PRESETS_MOBILE.map(n => (
-          <button
-            key={n}
-            style={s.addBtnMobile}
-            onClick={() => onAddCount(n)}
-          >
+          <button key={n} style={s.addBtnMobile} onClick={() => onAddCount(n)}>
             +{n}
           </button>
         ))}
@@ -112,73 +256,47 @@ export function UIControls({
 
         <div style={{ flex: 1 }} />
 
-        {/* Color swatches — compact */}
-        <div style={s.group}>
-          {COLOR_SWATCHES.map(c => (
-            <button
-              key={c.id}
-              title={c.label}
-              style={{
-                ...s.swatchMobile,
-                background: c.hex,
-                outline: dieColor === c.id ? '2px solid #fff' : '2px solid transparent',
-                outlineOffset: 2,
-              }}
-              onClick={() => onColorChange(c.id)}
-            />
-          ))}
-        </div>
+        {/* Colors — compact */}
+        {COLOR_SWATCHES.map(c => (
+          <button
+            key={c.id}
+            title={c.label}
+            style={{
+              ...s.swatchMobile,
+              background: c.hex,
+              outline: dieColor === c.id ? '2px solid #fff' : '2px solid transparent',
+              outlineOffset: 2,
+            }}
+            onClick={() => onColorChange(c.id)}
+          />
+        ))}
+
+        <div style={s.sep} />
+
+        {turnDropdown}
+        {phaseDropdown}
+        {histDropdown}
 
         <div style={s.sep} />
 
         {fxBtn}
         {lockBtn}
 
-        {/* Reset */}
-        <button style={s.resetBtnMobile} onClick={onReset} title="Limpiar mesa">
-          ✕
-        </button>
+        <button style={s.resetBtnMobile} onClick={onReset} title="Limpiar mesa">✕</button>
       </div>
     );
   }
 
-  // ── Desktop layout (2 rows) ─────────────────────────────────────────────
+  // ── Desktop layout (2 rows) ────────────────────────────────────────────
   return (
     <div style={s.bar}>
-      {/* ── Row 1 ─────────────────────────────────────────────────────── */}
+      {/* Row 1 */}
       <div style={s.row1}>
-        {/* Turn selector */}
-        <div style={s.group}>
-          <span style={s.groupLabel}>Turno</span>
-          {TURNS.map(t => (
-            <button
-              key={t}
-              style={{ ...s.turnBtn, ...(currentTurn === t ? s.turnActive : {}) }}
-              onClick={() => onTurnChange(t)}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
+        {turnDropdown}
+        {phaseDropdown}
 
         <div style={s.sep} />
 
-        {/* Phase buttons */}
-        <div style={s.group}>
-          {PHASES.map(p => (
-            <button
-              key={p}
-              style={{ ...s.phaseBtn, ...(currentPhase === p ? s.phaseActive : {}) }}
-              onClick={() => onPhaseChange(currentPhase === p ? null : p)}
-            >
-              {WARH_PHASE_LABEL[p]}
-            </button>
-          ))}
-        </div>
-
-        <div style={s.sep} />
-
-        {/* Color swatches */}
         <div style={s.group}>
           <span style={s.groupLabel}>Color</span>
           {COLOR_SWATCHES.map(c => (
@@ -199,8 +317,8 @@ export function UIControls({
         <div style={{ flex: 1 }} />
 
         {fxBtn}
+        {histDropdown}
 
-        {/* Repetir */}
         <button
           style={s.repeatBtn}
           onClick={onRepeat}
@@ -211,9 +329,8 @@ export function UIControls({
         </button>
       </div>
 
-      {/* ── Row 2 ─────────────────────────────────────────────────────── */}
+      {/* Row 2 */}
       <div style={s.row2}>
-        {/* Tirar dados */}
         <button
           style={{ ...s.throwBtn, opacity: count > 0 ? 1 : 0.45 }}
           onClick={onThrow}
@@ -224,7 +341,6 @@ export function UIControls({
 
         <div style={s.sep} />
 
-        {/* +ND6 additive buttons */}
         <div style={s.group}>
           {ADD_PRESETS.map(n => (
             <button
@@ -238,15 +354,12 @@ export function UIControls({
           ))}
         </div>
 
-        {count > 0 && (
-          <span style={s.countLabel}>{count}d6</span>
-        )}
+        {count > 0 && <span style={s.countLabel}>{count}d6</span>}
 
         <div style={{ flex: 1 }} />
 
         {lockBtn}
 
-        {/* Limpiar mesa */}
         <button style={s.resetBtn} onClick={onReset} title="Limpiar mesa">
           ✕ Limpiar
         </button>
@@ -321,203 +434,166 @@ const s: Record<string, React.CSSProperties> = {
     margin: '0 4px',
     flexShrink: 0,
   },
-  turnBtn: {
-    fontFamily: font,
-    background: '#0d1a2e',
-    border: '1px solid #152a44',
-    borderRadius: 3,
-    color: '#6080a0',
-    padding: '2px 7px',
-    fontSize: 11,
-    cursor: 'pointer',
-    transition: 'all 0.1s',
-  },
-  turnActive: {
-    background: '#00d4ff1a',
-    border: '1px solid #00d4ff',
-    color: '#00d4ff',
-  },
-  phaseBtn: {
-    fontFamily: font,
-    background: '#0d1a2e',
-    border: '1px solid #152a44',
-    borderRadius: 3,
-    color: '#5070a0',
-    padding: '2px 8px',
-    fontSize: 10,
-    cursor: 'pointer',
-    letterSpacing: 0.5,
-    transition: 'all 0.1s',
-  },
-  phaseActive: {
-    background: '#c9a84c22',
-    border: '1px solid #c9a84c',
-    color: '#c9a84c',
-  },
   swatch: {
-    width: 20,
-    height: 20,
-    borderRadius: 3,
-    border: 'none',
-    cursor: 'pointer',
-    padding: 0,
+    width: 20, height: 20,
+    borderRadius: 3, border: 'none',
+    cursor: 'pointer', padding: 0,
     transition: 'outline 0.1s',
   },
   swatchMobile: {
-    width: 18,
-    height: 18,
-    borderRadius: 3,
-    border: 'none',
-    cursor: 'pointer',
-    padding: 0,
+    width: 16, height: 16,
+    borderRadius: 3, border: 'none',
+    cursor: 'pointer', padding: 0,
     flexShrink: 0,
     transition: 'outline 0.1s',
   },
   repeatBtn: {
     fontFamily: font,
-    background: '#1a2030',
-    border: '1px solid #2a3a50',
-    borderRadius: 4,
-    color: '#6080a0',
-    padding: '3px 10px',
-    fontSize: 10,
-    cursor: 'pointer',
-    letterSpacing: 1,
-    fontWeight: 700,
+    background: '#1a2030', border: '1px solid #2a3a50',
+    borderRadius: 4, color: '#6080a0',
+    padding: '3px 10px', fontSize: 10,
+    cursor: 'pointer', letterSpacing: 1, fontWeight: 700,
   },
   throwBtn: {
     fontFamily: font,
-    background: '#00d4ff',
-    border: 'none',
-    borderRadius: 4,
-    color: '#000c14',
-    padding: '5px 16px',
-    fontSize: 12,
-    fontWeight: 700,
-    letterSpacing: 2,
-    cursor: 'pointer',
-    transition: 'opacity 0.15s',
+    background: '#00d4ff', border: 'none',
+    borderRadius: 4, color: '#000c14',
+    padding: '5px 16px', fontSize: 12,
+    fontWeight: 700, letterSpacing: 2,
+    cursor: 'pointer', transition: 'opacity 0.15s',
     minWidth: 130,
   },
   throwBtnMobile: {
     fontFamily: font,
-    background: '#00d4ff',
-    border: 'none',
-    borderRadius: 4,
-    color: '#000c14',
-    padding: '8px 12px',
-    fontSize: 12,
-    fontWeight: 700,
-    letterSpacing: 1,
-    cursor: 'pointer',
-    transition: 'opacity 0.15s',
-    flexShrink: 0,
-    minHeight: 36,
+    background: '#00d4ff', border: 'none',
+    borderRadius: 4, color: '#000c14',
+    padding: '7px 12px', fontSize: 12,
+    fontWeight: 700, letterSpacing: 1,
+    cursor: 'pointer', transition: 'opacity 0.15s',
+    flexShrink: 0, minHeight: 36,
   },
   addBtn: {
     fontFamily: font,
-    background: '#0d1a2e',
-    border: '1px solid #152a44',
-    borderRadius: 3,
-    color: '#44cc88',
-    padding: '3px 10px',
-    fontSize: 11,
-    fontWeight: 700,
-    cursor: 'pointer',
-    letterSpacing: 0.5,
-    transition: 'all 0.1s',
+    background: '#0d1a2e', border: '1px solid #152a44',
+    borderRadius: 3, color: '#44cc88',
+    padding: '3px 10px', fontSize: 11,
+    fontWeight: 700, cursor: 'pointer',
+    letterSpacing: 0.5, transition: 'all 0.1s',
   },
   addBtnMobile: {
     fontFamily: font,
-    background: '#0d1a2e',
-    border: '1px solid #152a44',
-    borderRadius: 3,
-    color: '#44cc88',
-    padding: '6px 10px',
-    fontSize: 11,
-    fontWeight: 700,
-    cursor: 'pointer',
-    flexShrink: 0,
-    minHeight: 36,
+    background: '#0d1a2e', border: '1px solid #152a44',
+    borderRadius: 3, color: '#44cc88',
+    padding: '5px 8px', fontSize: 11,
+    fontWeight: 700, cursor: 'pointer',
+    flexShrink: 0, minHeight: 34,
   },
   countLabel: {
-    color: '#c9a84c',
-    fontSize: 13,
-    fontWeight: 700,
-    letterSpacing: 1,
-    marginLeft: 6,
+    color: '#c9a84c', fontSize: 13,
+    fontWeight: 700, letterSpacing: 1, marginLeft: 6,
   },
   countLabelMobile: {
-    color: '#c9a84c',
-    fontSize: 12,
-    fontWeight: 700,
-    letterSpacing: 1,
-    flexShrink: 0,
+    color: '#c9a84c', fontSize: 12,
+    fontWeight: 700, letterSpacing: 1, flexShrink: 0,
   },
   resetBtn: {
     fontFamily: font,
-    background: '#1a1018',
-    border: '1px solid #3a1020',
-    borderRadius: 4,
-    color: '#aa4040',
-    padding: '3px 10px',
-    fontSize: 10,
-    cursor: 'pointer',
-    letterSpacing: 1,
-    fontWeight: 700,
+    background: '#1a1018', border: '1px solid #3a1020',
+    borderRadius: 4, color: '#aa4040',
+    padding: '3px 10px', fontSize: 10,
+    cursor: 'pointer', letterSpacing: 1, fontWeight: 700,
   },
   resetBtnMobile: {
     fontFamily: font,
-    background: '#1a1018',
-    border: '1px solid #3a1020',
-    borderRadius: 4,
-    color: '#aa4040',
-    padding: '6px 10px',
-    fontSize: 12,
-    cursor: 'pointer',
-    fontWeight: 700,
-    flexShrink: 0,
-    minHeight: 36,
+    background: '#1a1018', border: '1px solid #3a1020',
+    borderRadius: 4, color: '#aa4040',
+    padding: '6px 10px', fontSize: 12,
+    cursor: 'pointer', fontWeight: 700,
+    flexShrink: 0, minHeight: 36,
   },
   fxBtn: {
-    fontFamily: font,
-    borderRadius: 4,
-    padding: '3px 10px',
-    fontSize: 10,
-    cursor: 'pointer',
-    letterSpacing: 1,
-    fontWeight: 700,
-    transition: 'all 0.15s',
-    flexShrink: 0,
+    fontFamily: font, borderRadius: 4,
+    padding: '3px 9px', fontSize: 10,
+    cursor: 'pointer', letterSpacing: 1,
+    fontWeight: 700, transition: 'all 0.15s', flexShrink: 0,
   },
-  fxOn: {
-    background: '#001a1a',
-    border: '1px solid #00aabb',
-    color: '#00ccdd',
-  },
-  fxOff: {
-    background: '#1a1a1a',
-    border: '1px solid #333',
-    color: '#555',
-  },
+  fxOn:  { background: '#001a1a', border: '1px solid #00aabb', color: '#00ccdd' },
+  fxOff: { background: '#1a1a1a', border: '1px solid #333',    color: '#555'    },
   lockBtn: {
+    fontFamily: font, borderRadius: 4,
+    padding: '3px 8px', fontSize: 14,
+    cursor: 'pointer', transition: 'all 0.15s',
+    flexShrink: 0, lineHeight: 1,
+  },
+  lockOn:  { background: '#1a1000', border: '1px solid #aa8800', color: '#ffcc00' },
+  lockOff: { background: '#0d1a2e', border: '1px solid #152a44', color: '#4a6a8a' },
+  // ── Dropdown shared ────────────────────────────────────────────────────
+  dropBtn: {
     fontFamily: font,
+    background: '#0d1a2e', border: '1px solid #152a44',
+    borderRadius: 4, color: '#4a7aaa',
+    padding: '3px 8px', fontSize: 10,
+    fontWeight: 700, cursor: 'pointer',
+    letterSpacing: 0.5, whiteSpace: 'nowrap',
+    transition: 'all 0.1s', flexShrink: 0,
+  },
+  dropBtnOpen: {
+    border: '1px solid #00d4ff66',
+    color: '#00d4ff', background: '#001a2e',
+  },
+  dropBtnActive: {
+    border: '1px solid #c9a84c88',
+    color: '#c9a84c', background: '#120e00',
+  },
+  backdrop: {
+    position: 'fixed', inset: 0, zIndex: 199,
+  },
+  dropMenu: {
+    position: 'absolute',
+    top: 'calc(100% + 3px)', left: 0,
+    zIndex: 200,
+    background: 'rgba(6, 10, 22, 0.98)',
+    border: '1px solid #1a3a5a',
     borderRadius: 4,
-    padding: '3px 8px',
-    fontSize: 14,
-    cursor: 'pointer',
-    transition: 'all 0.15s',
-    flexShrink: 0,
-    lineHeight: 1,
+    minWidth: 100,
+    boxShadow: '0 6px 24px rgba(0,0,0,0.7)',
+    overflow: 'hidden',
+    fontFamily: font,
   },
-  lockOn: {
-    background: '#1a1000',
-    border: '1px solid #aa8800',
-    color: '#ffcc00',
+  dropItem: {
+    display: 'block', width: '100%',
+    background: 'none', border: 'none',
+    borderBottom: '1px solid #0a1828',
+    color: '#4a6a8a', fontFamily: font,
+    fontSize: 10, fontWeight: 700,
+    padding: '7px 12px',
+    textAlign: 'left', cursor: 'pointer',
+    letterSpacing: 0.5, whiteSpace: 'nowrap',
+    transition: 'background 0.1s, color 0.1s',
   },
-  lockOff: {
-    background: '#0d1a2e',
-    border: '1px solid #152a44',
-    color: '#4a6a8a',
+  dropItemActive: {
+    color: '#00d4ff', background: '#001a2a',
+  },
+  // ── History dropdown content ────────────────────────────────────────────
+  histHead: {
+    padding: '5px 12px',
+    borderBottom: '1px solid #0e2040',
+    color: '#2a4a6a', fontSize: 9,
+    letterSpacing: 3, fontWeight: 700,
+    fontFamily: font,
+  },
+  histEmpty: {
+    color: '#2a3a50', fontSize: 10,
+    padding: '8px 12px', fontFamily: font,
+    fontStyle: 'italic',
+  },
+  histItem: {
+    padding: '5px 12px',
+    borderBottom: '1px solid #0a1520',
+    fontFamily: font,
+  },
+  histItemRow: {
+    display: 'flex', justifyContent: 'space-between',
+    alignItems: 'center', gap: 8,
   },
 };

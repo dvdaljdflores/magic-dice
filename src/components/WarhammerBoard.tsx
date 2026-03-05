@@ -24,10 +24,9 @@ import { DiceScene } from './DiceScene';
 import { UIControls } from './UIControls';
 import { ResultsPanel } from './ResultsPanel';
 
-const TOP_BAR_H      = 72;
-const LEFT_W         = 240;
-const MOBILE_BAR_H   = 52;
-const MOBILE_SHEET_H = 56; // collapsed bottom sheet height
+const TOP_BAR_H    = 72;
+const LEFT_W       = 240;
+const MOBILE_BAR_H = 52;
 
 export default function WarhammerBoard() {
   const count        = useDiceStore(s => s.count);
@@ -74,7 +73,7 @@ export default function WarhammerBoard() {
     && phase !== 'ARRANGING';
 
   const canvasStyle = isMobile
-    ? { position: 'absolute' as const, top: MOBILE_BAR_H, left: 0, right: 0, bottom: MOBILE_SHEET_H }
+    ? { position: 'absolute' as const, top: MOBILE_BAR_H, left: 0, right: 0, bottom: 0 }
     : { position: 'absolute' as const, top: TOP_BAR_H, left: LEFT_W, right: 0, bottom: 0 };
 
   return (
@@ -127,6 +126,7 @@ export default function WarhammerBoard() {
         isMobile={isMobile}
         cameraLocked={cameraLocked}
         onCameraLockChange={(v) => setCameraLocked(v)}
+        history={history}
       />
 
       <ResultsPanel

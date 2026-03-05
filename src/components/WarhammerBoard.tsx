@@ -9,8 +9,8 @@ import { DiceScene } from './DiceScene';
 import { UIControls } from './UIControls';
 import { ResultsPanel } from './ResultsPanel';
 
-const TOP_BAR_H    = 72;
-const LEFT_W       = 240;
+const TOP_BAR_H = 72;
+const LEFT_W = 240;
 const MOBILE_BAR_H = 60;
 
 export default function WarhammerBoard() {
@@ -27,40 +27,106 @@ export default function WarhammerBoard() {
   const sustainedX   = useDiceStore(s => s.sustainedX);
   const undoStack    = useDiceStore(s => s.undoStack);
 
-  const addCount      = useDiceStore(s => s.addCount);
-  const throwDice     = useDiceStore(s => s.throwDice);
-  const repeatThrow   = useDiceStore(s => s.repeatThrow);
-  const deleteFace    = useDiceStore(s => s.deleteFace);
-  const rerollFace    = useDiceStore(s => s.rerollFace);
-  const toggleLethal  = useDiceStore(s => s.toggleLethal);
-  const sustainedHits = useDiceStore(s => s.sustainedHits);
-  const reset         = useDiceStore(s => s.reset);
-  const setDieColor   = useDiceStore(s => s.setDieColor);
-  const setTurn       = useDiceStore(s => s.setTurn);
-  const setWarhPhase  = useDiceStore(s => s.setWarhPhase);
-  const setSustainedX = useDiceStore(s => s.setSustainedX);
-  const undo          = useDiceStore(s => s.undo);
-  const animEnabled   = useDiceStore(s => s.animEnabled);
+  const addCount       = useDiceStore(s => s.addCount);
+  const throwDice      = useDiceStore(s => s.throwDice);
+  const repeatThrow    = useDiceStore(s => s.repeatThrow);
+  const deleteFace     = useDiceStore(s => s.deleteFace);
+  const rerollFace     = useDiceStore(s => s.rerollFace);
+  const toggleLethal   = useDiceStore(s => s.toggleLethal);
+  const sustainedHits  = useDiceStore(s => s.sustainedHits);
+  const reset          = useDiceStore(s => s.reset);
+  const setDieColor    = useDiceStore(s => s.setDieColor);
+  const setTurn        = useDiceStore(s => s.setTurn);
+  const setWarhPhase   = useDiceStore(s => s.setWarhPhase);
+  const setSustainedX  = useDiceStore(s => s.setSustainedX);
+  const undo           = useDiceStore(s => s.undo);
+  const animEnabled    = useDiceStore(s => s.animEnabled);
   const setAnimEnabled = useDiceStore(s => s.setAnimEnabled);
 
   const [isMobile, setIsMobile] = useState(false);
   const [cameraLocked, setCameraLocked] = useState(false);
 
+  /* Detect mobile viewport */
   useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768);
+    const check = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      setMobileLayoutMode(mobile);
+    };
+
     check();
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
   }, []);
 
+  /* Shake to roll dice */
   useEffect(() => {
-    setMobileLayoutMode(isMobile);
-  }, [isMobile]);
 
-  const canUndo = undoStack.length > 0
-    && phase !== 'ROLLING'
-    && phase !== 'SETTLING'
-    && phase !== 'ARRANGING';
+    if (!isMobile) return;
+
+    let lastTime = 0;
+    let shakePower = 0;
+
+    function handleMotion(event: DeviceMotionEvent) {
+
+      const acc = event.accelerationIncludingGravity;
+      if (!acc) return;
+
+      const magnitude =
+        Math.abs(acc.x ?? 0) +
+        Math.abs(acc.y ?? 0) +
+        Math.abs(acc.z ?? 0);
+
+      const now = Date.now();
+
+      if (magnitude > 25) {
+        shakePower += magnitude;
+        lastTime = now;
+      }
+
+      // trigger throw when shaking stops
+      if (shakePower > 120 && now - lastTime > 250) {
+
+        if (phase === 'PREVIEW' || phase === 'ARRANGED') {
+          throwDice();
+        }
+
+        shakePower = 0;
+      }
+    }
+
+    function startMotion() {
+      window.addEventListener('devicemotion', handleMotion);
+    }
+
+    // iOS requires explicit permission
+    if (
+      typeof DeviceMotionEvent !== 'undefined' &&
+      typeof (DeviceMotionEvent as any).requestPermission === 'function'
+    ) {
+      (DeviceMotionEvent as any)
+        .requestPermission()
+        .then((response: string) => {
+          if (response === 'granted') {
+            startMotion();
+          }
+        })
+        .catch(console.error);
+    } else {
+      startMotion();
+    }
+
+    return () => {
+      window.removeEventListener('devicemotion', handleMotion);
+    };
+
+  }, [isMobile, phase, throwDice]);
+
+  const canUndo =
+    undoStack.length > 0 &&
+    phase !== 'ROLLING' &&
+    phase !== 'SETTLING' &&
+    phase !== 'ARRANGING';
 
   const canvasStyle = isMobile
     ? { position: 'absolute' as const, top: MOBILE_BAR_H, left: 0, right: 0, bottom: 0 }

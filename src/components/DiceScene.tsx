@@ -25,30 +25,21 @@ import { PHYSICS_CONFIG } from '../physics/constants';
 
 const MAX_DICE = 120;
 
-// Desktop board size (original physics config)
-const BOARD_W_DESKTOP = PHYSICS_CONFIG.boardWidth;
-const BOARD_D_DESKTOP = PHYSICS_CONFIG.boardDepth;
+/*
+Board dimensions must follow the same mobile flag used by ArrangeLayout.
+We import the state from ArrangeLayout instead of keeping a second flag.
+*/
 
-// Mobile board size (portrait orientation)
-const BOARD_W_MOBILE = 16;
-const BOARD_D_MOBILE = 22;
-
-// Mobile layout flag (controlled by WarhammerBoard)
-let _mobileMode = false;
-
-export function setMobileLayoutMode(v: boolean) {
-  _mobileMode = v;
-}
+import { isMobileLayout } from '../core/ArrangeLayout';
 
 function getBoardWidth() {
-  return _mobileMode ? BOARD_W_MOBILE : BOARD_W_DESKTOP;
+  return isMobileLayout() ? 16 : PHYSICS_CONFIG.boardWidth;
 }
 
 function getBoardDepth() {
-  return _mobileMode ? BOARD_D_MOBILE : BOARD_D_DESKTOP;
+  return isMobileLayout() ? 22 : PHYSICS_CONFIG.boardDepth;
 }
 
-// Actual board dimensions used by the scene
 const BOARD_W = getBoardWidth();
 const BOARD_D = getBoardDepth();
 

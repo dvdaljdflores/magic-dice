@@ -594,7 +594,7 @@ const s: Record<string, React.CSSProperties> = {
     color: '#c9a84c', background: '#120e00',
   },
   backdrop: {
-    position: 'fixed', inset: 0, zIndex: 199,
+    position: 'fixed', inset: 0, zIndex: 499,
   },
   dropMenu: {
     position: 'absolute',
@@ -648,7 +648,8 @@ const s: Record<string, React.CSSProperties> = {
   dropMenuMobile: {
     position: 'fixed',
     top: 60, left: 0, right: 0,
-    zIndex: 200,
+    width: '100%',
+    zIndex: 500,
     background: 'rgba(4, 8, 20, 0.98)',
     borderBottom: '1px solid #1a3a5a',
     maxHeight: '70vh',

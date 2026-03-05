@@ -80,8 +80,14 @@ export default function WarhammerBoard() {
     <div style={{ width: '100vw', height: '100vh', position: 'relative', background: '#08080f' }}>
 
       <Canvas
+        key={isMobile ? 'mobile' : 'desktop'}
         shadows
-        camera={{ position: [0, 18, 15], fov: 40, near: 0.5, far: 85 }}
+        camera={{
+          position: isMobile ? [0, 22, 10] : [0, 18, 15],
+          fov: isMobile ? 55 : 40,
+          near: 0.5,
+          far: 85,
+        }}
         gl={{ antialias: true, powerPreference: 'high-performance' }}
         dpr={[1, 2]}
         style={canvasStyle}
@@ -101,7 +107,7 @@ export default function WarhammerBoard() {
           enabled={!cameraLocked}
           enablePan={false}
           minPolarAngle={0.25}
-          maxPolarAngle={Math.PI / 2.1}
+          maxPolarAngle={isMobile ? Math.PI / 2.6 : Math.PI / 2.1}
           minDistance={8}
           maxDistance={38}
           target={[0, 0, 0]}

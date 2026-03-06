@@ -175,7 +175,7 @@ function Lighting() {
 function Board({ hasAnyLethal }: { hasAnyLethal: boolean }) {
   return (
     <>
-      <mesh position={[0, 0.4, 0]} receiveShadow>
+      <mesh position={[0, 0.35, 0]} receiveShadow>
         <boxGeometry args={[BOARD_W, 0.12, BOARD_D]} />
         <meshStandardMaterial color="#c9a87c" roughness={0.82} metalness={0.04} />
       </mesh>

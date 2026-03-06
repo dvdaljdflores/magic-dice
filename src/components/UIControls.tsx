@@ -83,133 +83,9 @@ export function UIControls({
   isMobile, cameraLocked, onCameraLockChange,
   history,
 }: UIControlsProps) {
-  const [turnOpen,  setTurnOpen]  = useState(false);
-  const [phaseOpen, setPhaseOpen] = useState(false);
-  const [histOpen,  setHistOpen]  = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const busy = gamePhase === 'ROLLING' || gamePhase === 'SETTLING' || gamePhase === 'ARRANGING';
-
-  function closeAll() { setTurnOpen(false); setPhaseOpen(false); setHistOpen(false); }
-
-// ── Turn dropdown ──────────────────────────────────────────────────────
-const turnDropdown = (
-  <div style={{ position: 'relative', zIndex: 2000 }}>
-    <button
-      style={{ ...s.dropBtn, ...(turnOpen ? s.dropBtnOpen : {}) }}
-      onClick={() => { setTurnOpen(o => !o); setPhaseOpen(false); setHistOpen(false); }}
-      title="Seleccionar turno"
-    >
-      T{currentTurn} ▾
-    </button>
-
-    {turnOpen && (
-      <div style={isMobile ? s.dropMenuMobile : { ...s.dropMenu, position: 'absolute', top: '110%', left: 0, zIndex: 3000 }}>
-        {Array.from({ length: 10 }, (_, i) => {
-          const t = i + 1;
-          return (
-            <button
-              key={t}
-              style={s.dropItem}
-              onClick={() => {
-                onTurnChange(t);
-                setTurnOpen(false);
-              }}
-            >
-              Turno {t}
-            </button>
-          );
-        })}
-      </div>
-    )}
-  </div>
-);
-
-  // ── Phase dropdown ─────────────────────────────────────────────────────
-  const phaseDropdown = (
-    <div style={{ position: 'relative', zIndex: 2000 }}>
-      <button
-        style={{
-          ...s.dropBtn,
-          ...(phaseOpen ? s.dropBtnOpen : {}),
-          ...(currentPhase ? s.dropBtnActive : {}),
-        }}
-        onClick={() => { setPhaseOpen(o => !o); setTurnOpen(false); setHistOpen(false); }}
-        title="Seleccionar fase de Warhammer"
-      >
-        {phaseShort(currentPhase)} ▾
-      </button>
-      {phaseOpen && (
-        <div style={isMobile ? s.dropMenuMobile : { ...s.dropMenu, position: 'absolute', top: '110%', left: 0, zIndex: 3000, minWidth: 160 }}>
-          <button
-            style={{ ...s.dropItem, ...(currentPhase === null ? s.dropItemActive : {}) }}
-            onClick={() => { onPhaseChange(null); setPhaseOpen(false); }}
-          >
-            — ninguna —
-          </button>
-          {PHASES.map(p => (
-            <button
-              key={p}
-              style={{ ...s.dropItem, ...(currentPhase === p ? s.dropItemActive : {}) }}
-              onClick={() => { onPhaseChange(p); setPhaseOpen(false); }}
-            >
-              {WARH_PHASE_LABEL[p]}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-
-  // ── History dropdown ───────────────────────────────────────────────────
-  const histDropdown = (
-    <div style={{ position: 'relative', zIndex: 2000 }}>
-      <button
-        style={{ ...s.dropBtn, ...(histOpen ? s.dropBtnOpen : {}) }}
-        onClick={() => { setHistOpen(o => !o); setTurnOpen(false); setPhaseOpen(false); }}
-        title="Historial de tiradas"
-      >
-        ✦ ▾
-      </button>
-      {histOpen && (
-        <>
-          <div style={isMobile ? s.dropMenuMobile : { ...s.dropMenu, position: 'absolute', top: '110%', right: 0, left: 'auto', zIndex: 3000, width: 260, maxHeight: 360, overflowY: 'auto' }}>
-            <div style={s.histHead}>HISTORIAL</div>
-            {history.length === 0 ? (
-              <div style={s.histEmpty}>sin tiradas aún</div>
-            ) : (
-              [...history].reverse().map(entry => {
-                const isAction = !!entry.actionLabel;
-                const title = isAction
-                  ? entry.actionLabel!
-                  : `T${entry.turn}${entry.isReroll ? ' · rep.' : ''}`;
-                return (
-                  <div key={entry.id} style={s.histItem}>
-                    <div style={s.histItemRow}>
-                      <span style={{
-                        color: isAction ? '#9966cc' : entry.isReroll ? '#c9a84c' : '#4a7aaa',
-                        fontSize: 10, fontWeight: 700,
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      }}>
-                        {title}
-                      </span>
-                      <span style={{ color: '#2a3a50', fontSize: 9, flexShrink: 0 }}>
-                        {formatTime(entry.timestamp)}
-                      </span>
-                    </div>
-                    {entry.values.length > 0 && (
-                      <div style={{ color: '#2a4060', fontSize: 9, marginTop: 1 }}>
-                        {formatHistShort(entry.values)}
-                      </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </>
-      )}
-    </div>
-  );
 
   // ── Shared buttons ─────────────────────────────────────────────────────
   const lockBtn = (
@@ -233,70 +109,142 @@ const turnDropdown = (
   );
 
   // ── Mobile layout (single row) ─────────────────────────────────────────
-// ── Mobile layout (single row) ─────────────────────────────────────────
-if (isMobile) {
-  return (
-    <div style={s.barMobile}>
-      <div style={s.barMobileScroll}>
+  if (isMobile) {
+    return (
+      <div style={s.barMobile}>
+        <div style={s.barMobileScroll}>
 
-        <button
-          style={{ ...s.throwBtnMobile, opacity: count > 0 ? 1 : 0.45 }}
-          onClick={onThrow}
-          disabled={count === 0 || busy || (gamePhase !== 'PREVIEW' && gamePhase !== 'ARRANGED')}
-        >
-          ▶ TIRAR
-        </button>
-
-        <div style={s.sep} />
-
-        {ADD_PRESETS_MOBILE.map(n => (
-          <button key={n} style={s.addBtnMobile} onClick={() => onAddCount(n)}>
-            +{n}
-          </button>
-        ))}
-
-        {count > 0 && <span style={s.countLabelMobile}>{count}d6</span>}
-
-        <div style={s.sep} />
-
-        {/* Colors — compact */}
-        {COLOR_SWATCHES.map(c => (
           <button
-            key={c.id}
-            title={c.label}
-            style={{
-              ...s.swatchMobile,
-              background: c.hex,
-              outline: dieColor === c.id ? '2px solid #fff' : '2px solid transparent',
-              outlineOffset: 2,
-            }}
-            onClick={() => onColorChange(c.id)}
-          />
-        ))}
+            style={{ ...s.throwBtnMobile, opacity: count > 0 ? 1 : 0.45 }}
+            onClick={onThrow}
+            disabled={count === 0 || busy || (gamePhase !== 'PREVIEW' && gamePhase !== 'ARRANGED')}
+          >
+            ▶ TIRAR
+          </button>
 
-        <div style={s.sep} />
+          <div style={s.sep} />
 
-        {turnDropdown}
-        {phaseDropdown}
-        {histDropdown}
+          {ADD_PRESETS_MOBILE.map(n => (
+            <button key={n} style={s.addBtnMobile} onClick={() => onAddCount(n)}>
+              +{n}
+            </button>
+          ))}
 
-        <div style={s.sep} />
+          {count > 0 && <span style={s.countLabelMobile}>{count}d6</span>}
 
-        {fxBtn}
-        {lockBtn}
+          <div style={s.sep} />
 
-        <button
-          style={s.resetBtnMobile}
-          onClick={onReset}
-          title="Limpiar mesa"
-        >
-          ✕
-        </button>
+          {/* Colors — compact */}
+          {COLOR_SWATCHES.map(c => (
+            <button
+              key={c.id}
+              title={c.label}
+              style={{
+                ...s.swatchMobile,
+                background: c.hex,
+                outline: dieColor === c.id ? '2px solid #fff' : '2px solid transparent',
+                outlineOffset: 2,
+              }}
+              onClick={() => onColorChange(c.id)}
+            />
+          ))}
 
+          <div style={s.sep} />
+
+          {fxBtn}
+          {lockBtn}
+
+          <div style={s.sep} />
+
+          <button style={s.menuBtnMobile} onClick={() => setMenuOpen(true)} title="Menú">
+            ☰
+          </button>
+
+          <button style={s.resetBtnMobile} onClick={onReset} title="Limpiar mesa">
+            ✕
+          </button>
+
+        </div>
+
+        {/* Mobile full-screen menu panel */}
+        {menuOpen && (
+          <div style={s.mobileMenuPanel}>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#4a7aaa', fontSize: 11, fontWeight: 700, letterSpacing: 2, fontFamily: font }}>MENÚ</span>
+              <button style={s.menuCloseBtnMobile} onClick={() => setMenuOpen(false)}>✕ Cerrar</button>
+            </div>
+
+            <div style={s.menuSectionLabel}>TURNO</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {Array.from({ length: 10 }, (_, i) => i + 1).map(t => (
+                <button
+                  key={t}
+                  style={{ ...s.menuItemBtn, ...(currentTurn === t ? s.menuItemBtnActive : {}) }}
+                  onClick={() => onTurnChange(t)}
+                >
+                  Turno {t}
+                </button>
+              ))}
+            </div>
+
+            <div style={s.menuSectionLabel}>FASE</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <button
+                style={{ ...s.menuItemBtn, ...(currentPhase === null ? s.menuItemBtnActive : {}) }}
+                onClick={() => onPhaseChange(null)}
+              >
+                — ninguna —
+              </button>
+              {PHASES.map(p => (
+                <button
+                  key={p}
+                  style={{ ...s.menuItemBtn, ...(currentPhase === p ? s.menuItemBtnActive : {}) }}
+                  onClick={() => onPhaseChange(p)}
+                >
+                  {WARH_PHASE_LABEL[p]}
+                </button>
+              ))}
+            </div>
+
+            <div style={s.menuSectionLabel}>HISTORIAL</div>
+            {history.length === 0 ? (
+              <div style={s.histEmpty}>sin tiradas aún</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {[...history].reverse().slice(0, 10).map(entry => {
+                  const isAction = !!entry.actionLabel;
+                  const title = isAction ? entry.actionLabel! : `T${entry.turn}${entry.isReroll ? ' · rep.' : ''}`;
+                  return (
+                    <div key={entry.id} style={s.histItem}>
+                      <div style={s.histItemRow}>
+                        <span style={{ color: isAction ? '#9966cc' : entry.isReroll ? '#c9a84c' : '#4a7aaa', fontSize: 11, fontWeight: 700 }}>
+                          {title}
+                        </span>
+                        <span style={{ color: '#2a3a50', fontSize: 9, flexShrink: 0 }}>
+                          {formatTime(entry.timestamp)}
+                        </span>
+                      </div>
+                      {entry.values.length > 0 && (
+                        <div style={{ color: '#2a4060', fontSize: 9, marginTop: 1 }}>
+                          {formatHistShort(entry.values)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <button style={s.resetBtnMobile} onClick={() => { onReset(); setMenuOpen(false); }}>
+              ✕ Limpiar mesa
+            </button>
+
+          </div>
+        )}
       </div>
-    </div>
-  );
-}
+    );
+  }
 
   // ── Desktop layout (2 rows) ────────────────────────────────────────────
   return (
@@ -676,6 +624,57 @@ const s: Record<string, React.CSSProperties> = {
   histItemRow: {
     display: 'flex', justifyContent: 'space-between',
     alignItems: 'center', gap: 8,
+  },
+  // ── Mobile hamburger menu button ───────────────────────────────────────
+  menuBtnMobile: {
+    fontFamily: font,
+    background: '#0d1a2e', border: '1px solid #152a44',
+    borderRadius: 4, color: '#4a7aaa',
+    padding: '7px 12px', fontSize: 16,
+    cursor: 'pointer', flexShrink: 0,
+    minHeight: 36, fontWeight: 700,
+  },
+  // ── Mobile full-screen menu panel ──────────────────────────────────────
+  mobileMenuPanel: {
+    position: 'fixed',
+    top: 60, left: 0, right: 0,
+    background: 'rgba(4,8,20,0.98)',
+    borderBottom: '1px solid #1a3a5a',
+    zIndex: 2000,
+    padding: 16,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 12,
+    maxHeight: '80vh',
+    overflowY: 'auto',
+    fontFamily: font,
+    boxShadow: '0 8px 32px rgba(0,0,0,0.8)',
+  },
+  menuSectionLabel: {
+    color: '#2a4a6a', fontSize: 9,
+    letterSpacing: 3, fontWeight: 700,
+    borderBottom: '1px solid #0e2040',
+    paddingBottom: 4,
+    fontFamily: font,
+  },
+  menuItemBtn: {
+    fontFamily: font,
+    background: '#0d1a2e', border: '1px solid #152a44',
+    borderRadius: 3, color: '#4a6a8a',
+    padding: '8px 12px', fontSize: 12,
+    fontWeight: 700, cursor: 'pointer',
+    textAlign: 'left' as const,
+  },
+  menuItemBtnActive: {
+    background: '#001a2e', border: '1px solid #00d4ff',
+    color: '#00d4ff',
+  },
+  menuCloseBtnMobile: {
+    fontFamily: font,
+    background: '#0d1a2e', border: '1px solid #152a44',
+    borderRadius: 4, color: '#4a6a8a',
+    padding: '6px 12px', fontSize: 11,
+    fontWeight: 700, cursor: 'pointer',
   },
   // ── Mobile full-screen overlay dropdown ────────────────────────────────
   dropMenuMobile: {

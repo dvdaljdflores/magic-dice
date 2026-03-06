@@ -13,16 +13,18 @@ interface BoardMeshProps {
 export function BoardMesh({ hasAnyLethal }: BoardMeshProps) {
   return (
     <>
-      <mesh position={[0, 0.35, 0]} receiveShadow>
+      {/* Board surface — top at y=0 to match physics floor */}
+      <mesh position={[0, -0.06, 0]} receiveShadow>
         <boxGeometry args={[BOARD_W, 0.12, BOARD_D]} />
         <meshStandardMaterial color="#c9a87c" roughness={0.82} metalness={0.04} />
       </mesh>
 
+      {/* Frame rails */}
       {([
-        [-(BOARD_W / 2 + 0.35), 0.06, 0,               0.7, 0.18, BOARD_D + 0.7],
-        [ (BOARD_W / 2 + 0.35), 0.06, 0,               0.7, 0.18, BOARD_D + 0.7],
-        [0, 0.06, -(BOARD_D / 2 + 0.35), BOARD_W + 0.7, 0.18, 0.7],
-        [0, 0.06,  (BOARD_D / 2 + 0.35), BOARD_W + 0.7, 0.18, 0.7],
+        [-(BOARD_W / 2 + 0.35), 0.06, 0,               0.7, 0.24, BOARD_D + 0.7],
+        [ (BOARD_W / 2 + 0.35), 0.06, 0,               0.7, 0.24, BOARD_D + 0.7],
+        [0, 0.06, -(BOARD_D / 2 + 0.35), BOARD_W + 0.7, 0.24, 0.7],
+        [0, 0.06,  (BOARD_D / 2 + 0.35), BOARD_W + 0.7, 0.24, 0.7],
       ] as [number, number, number, number, number, number][]).map((d, i) => (
         <mesh key={i} position={[d[0], d[1], d[2]]}>
           <boxGeometry args={[d[3], d[4], d[5]]} />

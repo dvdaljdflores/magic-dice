@@ -138,7 +138,7 @@ export default function WarhammerBoard() {
       <Canvas
         shadows
         camera={{
-          position: isMobile ? [0, 11, 9] : [0, 18, 15],
+          position: isMobile ? [-3, 12, 8] : [0, 18, 15],
           fov: isMobile ? 60 : 40,
           near: 0.5,
           far: 85,
@@ -166,7 +166,7 @@ export default function WarhammerBoard() {
           maxPolarAngle={isMobile ? 1.35 : Math.PI / 2.1}
           minDistance={isMobile ? 5 : 8}
           maxDistance={isMobile ? 22 : 38}
-          target={isMobile ? [0, 0, -8] : [0, 0, 0]}
+          target={(isMobile ? [-2.5, 0.6, -8] : [0, 0, 0]) as [number, number, number]}
         />
 
       </Canvas>

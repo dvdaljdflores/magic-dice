@@ -40,8 +40,8 @@ function getBoardDepth() {
   return isMobileLayout() ? 22 : PHYSICS_CONFIG.boardDepth;
 }
 
-const BOARD_W = getBoardWidth();
-const BOARD_D = getBoardDepth();
+let BOARD_W = getBoardWidth();
+let BOARD_D = getBoardDepth();
 
 const LETHAL_ZONE_Z = 6.0;
 
@@ -71,8 +71,15 @@ interface DiceSceneProps {
 export function DiceScene({
   count, gamePhase, rollResult, dieColor, activeMask, lethalMask,
 }: DiceSceneProps) {
+
   const geo = useMemo(() => createDiceGeometry(), []);
   const mat = useMemo(() => createDiceMaterial(), []);
+
+  useEffect(() => {
+    BOARD_W = getBoardWidth();
+    BOARD_D = getBoardDepth();
+  }, []);
+
   const lethalMat = useMemo(() => {
     const m = createDiceMaterial();
     m.color.setRGB(0.92, 0.68, 0.02); // vivid gold
@@ -168,7 +175,7 @@ function Lighting() {
 function Board({ hasAnyLethal }: { hasAnyLethal: boolean }) {
   return (
     <>
-      <mesh position={[0, -0.06, 0]} receiveShadow>
+      <mesh position={[0, 0.4, 0]} receiveShadow>
         <boxGeometry args={[BOARD_W, 0.12, BOARD_D]} />
         <meshStandardMaterial color="#c9a87c" roughness={0.82} metalness={0.04} />
       </mesh>

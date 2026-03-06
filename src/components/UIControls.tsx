@@ -103,15 +103,7 @@ const turnDropdown = (
     </button>
 
     {turnOpen && (
-      <div
-        style={{
-          ...s.dropMenu,
-          position: isMobile ? 'fixed' : 'absolute',
-          top: isMobile ? 60 : '110%',
-          left: 0,
-          zIndex: 3000
-        }}
-      >
+      <div style={isMobile ? s.dropMenuMobile : { ...s.dropMenu, position: 'absolute', top: '110%', left: 0, zIndex: 3000 }}>
         {Array.from({ length: 10 }, (_, i) => {
           const t = i + 1;
           return (
@@ -147,7 +139,7 @@ const turnDropdown = (
         {phaseShort(currentPhase)} ▾
       </button>
       {phaseOpen && (
-        <div style={{ ...s.dropMenu, position: isMobile ? 'fixed' : 'absolute', top: isMobile ? 60 : '110%', left: 0, zIndex: 3000, minWidth: 160 }}>
+        <div style={isMobile ? s.dropMenuMobile : { ...s.dropMenu, position: 'absolute', top: '110%', left: 0, zIndex: 3000, minWidth: 160 }}>
           <button
             style={{ ...s.dropItem, ...(currentPhase === null ? s.dropItemActive : {}) }}
             onClick={() => { onPhaseChange(null); setPhaseOpen(false); }}
@@ -180,7 +172,7 @@ const turnDropdown = (
       </button>
       {histOpen && (
         <>
-          <div style={{ ...s.dropMenu, position: isMobile ? 'fixed' : 'absolute', top: isMobile ? 60 : '110%', right: 0, left: 'auto', zIndex: 3000, width: isMobile ? '100%' : 260, maxHeight: 360, overflowY: 'auto' }}>
+          <div style={isMobile ? s.dropMenuMobile : { ...s.dropMenu, position: 'absolute', top: '110%', right: 0, left: 'auto', zIndex: 3000, width: 260, maxHeight: 360, overflowY: 'auto' }}>
             <div style={s.histHead}>HISTORIAL</div>
             {history.length === 0 ? (
               <div style={s.histEmpty}>sin tiradas aún</div>

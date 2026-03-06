@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { useShallow } from 'zustand/react/shallow';
@@ -11,6 +11,7 @@ import { ResultsPanel } from './ResultsPanel';
 import { TOP_BAR_H, LEFT_PANEL_W, MOBILE_BAR_H } from '../constants/theme';
 import { useMobileDetect } from '../hooks/useMobileDetect';
 import { useDeviceMotion } from '../hooks/useDeviceMotion';
+import { setMobileLayoutMode } from '../core/ArrangeLayout';
 
 export default function WarhammerBoard() {
 
@@ -56,6 +57,11 @@ export default function WarhammerBoard() {
   const isMobile = useMobileDetect();
   const [cameraLocked, setCameraLocked] = useState(false);
 
+  // Sincroniza el modo móvil con ArrangeLayout
+  useEffect(() => {
+    setMobileLayoutMode(isMobile);
+  }, [isMobile]);
+
   const canThrow = phase === 'PREVIEW' || phase === 'ARRANGED';
   useDeviceMotion(isMobile, canThrow, throwDice);
 
@@ -99,11 +105,11 @@ export default function WarhammerBoard() {
         <OrbitControls
           enabled={!cameraLocked}
           enablePan={false}
-          minPolarAngle={isMobile ? 0.05 : 0.25}
+          minPolarAngle={isMobile ? 0.15 : 0.11}
           maxPolarAngle={isMobile ? 0.6 : Math.PI / 2.1}
           minDistance={isMobile ? 15 : 8}
           maxDistance={isMobile ? 40 : 38}
-          target={(isMobile ? [0, 0, -3] : [0, 0, 0]) as [number, number, number]}
+          target={(isMobile ? [0, -15, -3] : [0, 0, 0]) as [number, number, number]}
         />
 
       </Canvas>

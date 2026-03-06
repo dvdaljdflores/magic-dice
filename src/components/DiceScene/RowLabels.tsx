@@ -1,15 +1,10 @@
-/**
- * RowLabels — Face-value labels shown next to arranged dice rows
- */
-
 'use client';
 
 import { Text } from '@react-three/drei';
 import type { DiceRollResult } from '../../core/types';
 import { useDiceStore } from '../../store/diceStore';
 import { BOARD_W, LETHAL_ZONE_Z } from './sceneUtils';
-
-const LABEL_X = -(BOARD_W / 2) + 0.9;
+import { isMobileLayout } from '../../core/ArrangeLayout';
 
 interface RowLabelsProps {
   rollResult: DiceRollResult | null;
@@ -18,8 +13,14 @@ interface RowLabelsProps {
 }
 
 export function RowLabels({ rollResult, activeMask, lethalMask }: RowLabelsProps) {
+
   const arrangeTargets = useDiceStore(s => s.arrangeTargets);
   if (!arrangeTargets || !rollResult) return null;
+
+  // Ajuste simple: mover etiquetas hacia la derecha
+  const labelX = isMobileLayout()
+    ? -(BOARD_W / 2) + 3.2
+    : -(BOARD_W / 2) + 0.9;
 
   const normalRowZ = new Map<number, number>();
   const normalRowCount = new Map<number, number>();
@@ -27,8 +28,10 @@ export function RowLabels({ rollResult, activeMask, lethalMask }: RowLabelsProps
 
   for (const [dieIdx, target] of arrangeTargets) {
     if (activeMask && !activeMask[dieIdx]) continue;
+
     const v = rollResult.values[dieIdx];
     const isLethal = lethalMask?.[dieIdx] ?? false;
+
     if (isLethal) {
       lethalCount++;
     } else {
@@ -39,14 +42,15 @@ export function RowLabels({ rollResult, activeMask, lethalMask }: RowLabelsProps
 
   return (
     <>
-      {[1, 2, 3, 4, 5, 6].map(v => {
+      {[1,2,3,4,5,6].map(v => {
         const z   = normalRowZ.get(v);
         const cnt = normalRowCount.get(v);
         if (z === undefined || !cnt) return null;
+
         return (
           <Text
             key={v}
-            position={[LABEL_X, 0.12, z]}
+            position={[labelX, 0.12, z]}
             rotation={[-Math.PI / 2, 0, 0]}
             fontSize={0.42}
             color="#0a0a08"
@@ -57,6 +61,7 @@ export function RowLabels({ rollResult, activeMask, lethalMask }: RowLabelsProps
           </Text>
         );
       })}
+
       {lethalCount > 0 && (
         <Text
           position={[0, 0.12, LETHAL_ZONE_Z]}

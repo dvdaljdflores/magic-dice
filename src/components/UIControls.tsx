@@ -106,8 +106,8 @@ const turnDropdown = (
       <div
         style={{
           ...s.dropMenu,
-          position: 'absolute',
-          top: '100%',
+          position: isMobile ? 'fixed' : 'absolute',
+          top: isMobile ? 60 : '110%',
           left: 0,
           zIndex: 3000
         }}
@@ -134,7 +134,7 @@ const turnDropdown = (
 
   // ── Phase dropdown ─────────────────────────────────────────────────────
   const phaseDropdown = (
-    <div style={{ position: 'relative' }}>
+    <div style={{ position: 'relative', zIndex: 2000 }}>
       <button
         style={{
           ...s.dropBtn,
@@ -147,33 +147,30 @@ const turnDropdown = (
         {phaseShort(currentPhase)} ▾
       </button>
       {phaseOpen && (
-        <>
-          <div style={s.backdrop} onClick={closeAll} />
-          <div style={isMobile ? s.dropMenuMobile : { ...s.dropMenu, minWidth: 160 }}>
+        <div style={{ ...s.dropMenu, position: isMobile ? 'fixed' : 'absolute', top: isMobile ? 60 : '110%', left: 0, zIndex: 3000, minWidth: 160 }}>
+          <button
+            style={{ ...s.dropItem, ...(currentPhase === null ? s.dropItemActive : {}) }}
+            onClick={() => { onPhaseChange(null); setPhaseOpen(false); }}
+          >
+            — ninguna —
+          </button>
+          {PHASES.map(p => (
             <button
-              style={{ ...(isMobile ? s.dropItemMobile : s.dropItem), ...(currentPhase === null ? s.dropItemActive : {}) }}
-              onClick={() => { onPhaseChange(null); setPhaseOpen(false); }}
+              key={p}
+              style={{ ...s.dropItem, ...(currentPhase === p ? s.dropItemActive : {}) }}
+              onClick={() => { onPhaseChange(p); setPhaseOpen(false); }}
             >
-              — ninguna —
+              {WARH_PHASE_LABEL[p]}
             </button>
-            {PHASES.map(p => (
-              <button
-                key={p}
-                style={{ ...(isMobile ? s.dropItemMobile : s.dropItem), ...(currentPhase === p ? s.dropItemActive : {}) }}
-                onClick={() => { onPhaseChange(p); setPhaseOpen(false); }}
-              >
-                {WARH_PHASE_LABEL[p]}
-              </button>
-            ))}
-          </div>
-        </>
+          ))}
+        </div>
       )}
     </div>
   );
 
   // ── History dropdown ───────────────────────────────────────────────────
   const histDropdown = (
-    <div style={{ position: 'relative' }}>
+    <div style={{ position: 'relative', zIndex: 2000 }}>
       <button
         style={{ ...s.dropBtn, ...(histOpen ? s.dropBtnOpen : {}) }}
         onClick={() => { setHistOpen(o => !o); setTurnOpen(false); setPhaseOpen(false); }}
@@ -183,8 +180,7 @@ const turnDropdown = (
       </button>
       {histOpen && (
         <>
-          <div style={s.backdrop} onClick={closeAll} />
-          <div style={isMobile ? { ...s.dropMenuMobile, overflowY: 'auto' } : { ...s.dropMenu, right: 0, left: 'auto', width: 260, maxHeight: 360, overflowY: 'auto' }}>
+          <div style={{ ...s.dropMenu, position: isMobile ? 'fixed' : 'absolute', top: isMobile ? 60 : '110%', right: 0, left: 'auto', zIndex: 3000, width: isMobile ? '100%' : 260, maxHeight: 360, overflowY: 'auto' }}>
             <div style={s.histHead}>HISTORIAL</div>
             {history.length === 0 ? (
               <div style={s.histEmpty}>sin tiradas aún</div>
@@ -245,9 +241,12 @@ const turnDropdown = (
   );
 
   // ── Mobile layout (single row) ─────────────────────────────────────────
-  if (isMobile) {
-    return (
-      <div style={s.barMobile}>
+// ── Mobile layout (single row) ─────────────────────────────────────────
+if (isMobile) {
+  return (
+    <div style={s.barMobile}>
+      <div style={s.barMobileScroll}>
+
         <button
           style={{ ...s.throwBtnMobile, opacity: count > 0 ? 1 : 0.45 }}
           onClick={onThrow}
@@ -266,7 +265,7 @@ const turnDropdown = (
 
         {count > 0 && <span style={s.countLabelMobile}>{count}d6</span>}
 
-        <div style={{ flex: 1 }} />
+        <div style={s.sep} />
 
         {/* Colors — compact */}
         {COLOR_SWATCHES.map(c => (
@@ -294,10 +293,18 @@ const turnDropdown = (
         {fxBtn}
         {lockBtn}
 
-        <button style={s.resetBtnMobile} onClick={onReset} title="Limpiar mesa">✕</button>
+        <button
+          style={s.resetBtnMobile}
+          onClick={onReset}
+          title="Limpiar mesa"
+        >
+          ✕
+        </button>
+
       </div>
-    );
-  }
+    </div>
+  );
+}
 
   // ── Desktop layout (2 rows) ────────────────────────────────────────────
   return (
@@ -415,13 +422,15 @@ const s: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     fontFamily: font,
-    zIndex: 100,
+    zIndex: 1000,
     boxShadow: '0 2px 16px rgba(0,0,0,0.5)',
     userSelect: 'none',
   },
   barMobile: {
     position: 'absolute',
-    top: 0, left: 0, right: 0,
+    top: 0,
+    left: 0,
+    right: 0,
     height: 60,
     background: 'rgba(8, 10, 20, 0.97)',
     borderBottom: '1px solid #1a2a40',
@@ -429,13 +438,27 @@ const s: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     padding: '0 8px',
-    gap: 5,
     fontFamily: font,
     zIndex: 100,
     boxShadow: '0 2px 16px rgba(0,0,0,0.5)',
     userSelect: 'none',
-    overflowX: 'auto',
+  
+    overflow: 'hidden'
   },
+  
+  barMobileScroll: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 5,
+    flex: 1,
+    minWidth: 0,
+    overflowX: 'auto',
+    overflowY: 'hidden',
+    WebkitOverflowScrolling: 'touch',
+    flexWrap: 'nowrap',
+    touchAction: 'pan-x',
+  },
+
   row1: {
     display: 'flex',
     alignItems: 'center',
@@ -519,11 +542,17 @@ const s: Record<string, React.CSSProperties> = {
   },
   addBtnMobile: {
     fontFamily: font,
-    background: '#0d1a2e', border: '1px solid #152a44',
-    borderRadius: 3, color: '#44cc88',
-    padding: '5px 8px', fontSize: 11,
-    fontWeight: 700, cursor: 'pointer',
-    flexShrink: 0, minHeight: 34,
+    background: '#0d1a2e',
+    border: '1px solid #152a44',
+    borderRadius: 3,
+    color: '#44cc88',
+    padding: '5px 8px',
+    fontSize: 11,
+    fontWeight: 700,
+    cursor: 'pointer',
+  
+    flexShrink: 0,
+    minHeight: 34,
   },
   countLabel: {
     color: '#c9a84c', fontSize: 13,

@@ -26,8 +26,8 @@ const LETHAL_ZONE_Z = 6.0;
 const NORMAL_Z_MIN  = -7.0;
 const NORMAL_Z_MAX  =  1.5;
 
-const NORMAL_Z_MIN_M = -10.0;
-const NORMAL_Z_MAX_M =   3.0;
+const NORMAL_Z_MIN_M = -8.0;
+const NORMAL_Z_MAX_M =  2.0;
 
 const MAX_PER_STACK_DESKTOP = 10;
 const MAX_PER_STACK_MOBILE  = 6;
@@ -42,6 +42,10 @@ let _mobileMode = false;
  */
 export function setMobileLayoutMode(mobile: boolean): void {
   _mobileMode = mobile;
+}
+
+export function isMobileLayout(): boolean {
+  return _mobileMode;
 }
 
 /**
@@ -67,8 +71,6 @@ export function computeArrangeTargets(
   const rowSp  = scale * ROW_SP;
   const stackH = scale * 0.85;
 
-  const leftX  = -(boardW / 2) + LABEL_SPACE + scale / 2;
-
   // Group active dice by face value
   const normalGroups: Record<number, number[]> = {};
   const lethalGroups: Record<number, number[]> = {};
@@ -90,6 +92,18 @@ export function computeArrangeTargets(
   const normalVals = [1,2,3,4,5,6].filter(
     v => (normalGroups[v]?.length ?? 0) > 0
   );
+
+  // Compute leftX: left-aligned on desktop, centered on mobile
+  let leftX: number;
+  if (_mobileMode) {
+    const maxInRow = normalVals.reduce(
+      (mx, v) => Math.max(mx, Math.min(normalGroups[v]?.length ?? 0, maxPerStack)), 0
+    );
+    const gridW = (maxInRow - 1) * colSp;
+    leftX = -(gridW / 2);
+  } else {
+    leftX = -(boardW / 2) + LABEL_SPACE + scale / 2;
+  }
 
   if (normalVals.length > 0) {
 

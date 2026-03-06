@@ -1,126 +1,63 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
+import { useShallow } from 'zustand/react/shallow';
 import { useDiceStore } from '../store/diceStore';
-import { setMobileLayoutMode } from '../core/ArrangeLayout';
 import { DiceScene } from './DiceScene';
 import { UIControls } from './UIControls';
 import { ResultsPanel } from './ResultsPanel';
-
-const TOP_BAR_H = 72;
-const LEFT_W = 240;
-const MOBILE_BAR_H = 60;
+import { TOP_BAR_H, LEFT_PANEL_W, MOBILE_BAR_H } from '../constants/theme';
+import { useMobileDetect } from '../hooks/useMobileDetect';
+import { useDeviceMotion } from '../hooks/useDeviceMotion';
 
 export default function WarhammerBoard() {
 
-  const count        = useDiceStore(s => s.count);
-  const phase        = useDiceStore(s => s.phase);
-  const rollResult   = useDiceStore(s => s.rollResult);
-  const dieColor     = useDiceStore(s => s.dieColor);
-  const activeMask   = useDiceStore(s => s.activeMask);
-  const lethalMask   = useDiceStore(s => s.lethalMask);
-  const history      = useDiceStore(s => s.history);
-  const currentTurn  = useDiceStore(s => s.currentTurn);
-  const currentPhase = useDiceStore(s => s.currentPhase);
-  const sustainedX   = useDiceStore(s => s.sustainedX);
-  const undoStack    = useDiceStore(s => s.undoStack);
+  const {
+    count, phase, rollResult, dieColor, activeMask, lethalMask,
+    history, currentTurn, currentPhase, sustainedX, undoStack, animEnabled,
+  } = useDiceStore(useShallow(s => ({
+    count:        s.count,
+    phase:        s.phase,
+    rollResult:   s.rollResult,
+    dieColor:     s.dieColor,
+    activeMask:   s.activeMask,
+    lethalMask:   s.lethalMask,
+    history:      s.history,
+    currentTurn:  s.currentTurn,
+    currentPhase: s.currentPhase,
+    sustainedX:   s.sustainedX,
+    undoStack:    s.undoStack,
+    animEnabled:  s.animEnabled,
+  })));
 
-  const addCount       = useDiceStore(s => s.addCount);
-  const throwDice      = useDiceStore(s => s.throwDice);
-  const repeatThrow    = useDiceStore(s => s.repeatThrow);
-  const deleteFace     = useDiceStore(s => s.deleteFace);
-  const rerollFace     = useDiceStore(s => s.rerollFace);
-  const toggleLethal   = useDiceStore(s => s.toggleLethal);
-  const sustainedHits  = useDiceStore(s => s.sustainedHits);
-  const reset          = useDiceStore(s => s.reset);
-  const setDieColor    = useDiceStore(s => s.setDieColor);
-  const setTurn        = useDiceStore(s => s.setTurn);
-  const setWarhPhase   = useDiceStore(s => s.setWarhPhase);
-  const setSustainedX  = useDiceStore(s => s.setSustainedX);
-  const undo           = useDiceStore(s => s.undo);
-  const animEnabled    = useDiceStore(s => s.animEnabled);
-  const setAnimEnabled = useDiceStore(s => s.setAnimEnabled);
+  const {
+    addCount, throwDice, repeatThrow, deleteFace, rerollFace,
+    toggleLethal, sustainedHits, reset, setDieColor, setTurn,
+    setWarhPhase, setSustainedX, undo, setAnimEnabled,
+  } = useDiceStore(useShallow(s => ({
+    addCount:       s.addCount,
+    throwDice:      s.throwDice,
+    repeatThrow:    s.repeatThrow,
+    deleteFace:     s.deleteFace,
+    rerollFace:     s.rerollFace,
+    toggleLethal:   s.toggleLethal,
+    sustainedHits:  s.sustainedHits,
+    reset:          s.reset,
+    setDieColor:    s.setDieColor,
+    setTurn:        s.setTurn,
+    setWarhPhase:   s.setWarhPhase,
+    setSustainedX:  s.setSustainedX,
+    undo:           s.undo,
+    setAnimEnabled: s.setAnimEnabled,
+  })));
 
-  const [isMobile, setIsMobile] = useState(false);
+  const isMobile = useMobileDetect();
   const [cameraLocked, setCameraLocked] = useState(false);
 
-  /* Detect mobile viewport */
-  useEffect(() => {
-    const check = () => {
-      const mobile = window.innerWidth < 768;
-      setIsMobile(mobile);
-      setMobileLayoutMode(mobile);
-    };
-
-    check();
-    window.addEventListener('resize', check);
-    return () => window.removeEventListener('resize', check);
-  }, []);
-
-  /* Shake to roll dice */
-  useEffect(() => {
-
-    if (!isMobile) return;
-
-    let lastTime = 0;
-    let shakePower = 0;
-
-    function handleMotion(event: DeviceMotionEvent) {
-
-      const acc = event.accelerationIncludingGravity;
-      if (!acc) return;
-
-      const magnitude =
-        Math.abs(acc.x ?? 0) +
-        Math.abs(acc.y ?? 0) +
-        Math.abs(acc.z ?? 0);
-
-      const now = Date.now();
-
-      if (magnitude > 25) {
-        shakePower += magnitude;
-        lastTime = now;
-      }
-
-      // trigger throw when shaking stops
-      if (shakePower > 120 && now - lastTime > 250) {
-
-        if (phase === 'PREVIEW' || phase === 'ARRANGED') {
-          throwDice();
-        }
-
-        shakePower = 0;
-      }
-    }
-
-    function startMotion() {
-      window.addEventListener('devicemotion', handleMotion);
-    }
-
-    // iOS requires explicit permission
-    if (
-      typeof DeviceMotionEvent !== 'undefined' &&
-      typeof (DeviceMotionEvent as any).requestPermission === 'function'
-    ) {
-      (DeviceMotionEvent as any)
-        .requestPermission()
-        .then((response: string) => {
-          if (response === 'granted') {
-            startMotion();
-          }
-        })
-        .catch(console.error);
-    } else {
-      startMotion();
-    }
-
-    return () => {
-      window.removeEventListener('devicemotion', handleMotion);
-    };
-
-  }, [isMobile, phase, throwDice]);
+  const canThrow = phase === 'PREVIEW' || phase === 'ARRANGED';
+  useDeviceMotion(isMobile, canThrow, throwDice);
 
   const canUndo =
     undoStack.length > 0 &&
@@ -130,7 +67,7 @@ export default function WarhammerBoard() {
 
   const canvasStyle = isMobile
     ? { position: 'absolute' as const, top: MOBILE_BAR_H, left: 0, right: 0, bottom: 0 }
-    : { position: 'absolute' as const, top: TOP_BAR_H, left: LEFT_W, right: 0, bottom: 0 };
+    : { position: 'absolute' as const, top: TOP_BAR_H, left: LEFT_PANEL_W, right: 0, bottom: 0 };
 
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative', background: '#08080f' }}>
@@ -138,8 +75,8 @@ export default function WarhammerBoard() {
       <Canvas
         shadows
         camera={{
-          position: isMobile ? [-3, 12, 8] : [0, 18, 15],
-          fov: isMobile ? 60 : 40,
+          position: isMobile ? [0, 28, -2] : [0, 18, 15],
+          fov: isMobile ? 58 : 40,
           near: 0.5,
           far: 85,
         }}
@@ -162,11 +99,11 @@ export default function WarhammerBoard() {
         <OrbitControls
           enabled={!cameraLocked}
           enablePan={false}
-          minPolarAngle={isMobile ? 0.9 : 0.25}
-          maxPolarAngle={isMobile ? 1.35 : Math.PI / 2.1}
-          minDistance={isMobile ? 5 : 8}
-          maxDistance={isMobile ? 22 : 38}
-          target={(isMobile ? [-2.5, 0.6, -8] : [0, 0, 0]) as [number, number, number]}
+          minPolarAngle={isMobile ? 0.05 : 0.25}
+          maxPolarAngle={isMobile ? 0.6 : Math.PI / 2.1}
+          minDistance={isMobile ? 15 : 8}
+          maxDistance={isMobile ? 40 : 38}
+          target={(isMobile ? [0, 0, -3] : [0, 0, 0]) as [number, number, number]}
         />
 
       </Canvas>

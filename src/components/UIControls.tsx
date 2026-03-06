@@ -107,7 +107,7 @@ const turnDropdown = (
         style={{
           ...s.dropMenu,
           position: 'absolute',
-          top: '110%',
+          top: '100%',
           left: 0,
           zIndex: 3000
         }}
@@ -134,7 +134,7 @@ const turnDropdown = (
 
   // ── Phase dropdown ─────────────────────────────────────────────────────
   const phaseDropdown = (
-    <div style={{ position: 'relative', zIndex: 2000 }}>
+    <div style={{ position: 'relative' }}>
       <button
         style={{
           ...s.dropBtn,
@@ -147,30 +147,33 @@ const turnDropdown = (
         {phaseShort(currentPhase)} ▾
       </button>
       {phaseOpen && (
-        <div style={{ ...s.dropMenu, position: 'absolute', top: '110%', left: 0, zIndex: 3000, minWidth: 160 }}>
-          <button
-            style={{ ...s.dropItem, ...(currentPhase === null ? s.dropItemActive : {}) }}
-            onClick={() => { onPhaseChange(null); setPhaseOpen(false); }}
-          >
-            — ninguna —
-          </button>
-          {PHASES.map(p => (
+        <>
+          <div style={s.backdrop} onClick={closeAll} />
+          <div style={isMobile ? s.dropMenuMobile : { ...s.dropMenu, minWidth: 160 }}>
             <button
-              key={p}
-              style={{ ...s.dropItem, ...(currentPhase === p ? s.dropItemActive : {}) }}
-              onClick={() => { onPhaseChange(p); setPhaseOpen(false); }}
+              style={{ ...(isMobile ? s.dropItemMobile : s.dropItem), ...(currentPhase === null ? s.dropItemActive : {}) }}
+              onClick={() => { onPhaseChange(null); setPhaseOpen(false); }}
             >
-              {WARH_PHASE_LABEL[p]}
+              — ninguna —
             </button>
-          ))}
-        </div>
+            {PHASES.map(p => (
+              <button
+                key={p}
+                style={{ ...(isMobile ? s.dropItemMobile : s.dropItem), ...(currentPhase === p ? s.dropItemActive : {}) }}
+                onClick={() => { onPhaseChange(p); setPhaseOpen(false); }}
+              >
+                {WARH_PHASE_LABEL[p]}
+              </button>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
 
   // ── History dropdown ───────────────────────────────────────────────────
   const histDropdown = (
-    <div style={{ position: 'relative', zIndex: 2000 }}>
+    <div style={{ position: 'relative' }}>
       <button
         style={{ ...s.dropBtn, ...(histOpen ? s.dropBtnOpen : {}) }}
         onClick={() => { setHistOpen(o => !o); setTurnOpen(false); setPhaseOpen(false); }}
@@ -180,7 +183,8 @@ const turnDropdown = (
       </button>
       {histOpen && (
         <>
-          <div style={{ ...s.dropMenu, position: 'absolute', top: '110%', right: 0, left: 'auto', zIndex: 3000, width: 260, maxHeight: 360, overflowY: 'auto' }}>
+          <div style={s.backdrop} onClick={closeAll} />
+          <div style={isMobile ? { ...s.dropMenuMobile, overflowY: 'auto' } : { ...s.dropMenu, right: 0, left: 'auto', width: 260, maxHeight: 360, overflowY: 'auto' }}>
             <div style={s.histHead}>HISTORIAL</div>
             {history.length === 0 ? (
               <div style={s.histEmpty}>sin tiradas aún</div>
@@ -430,7 +434,7 @@ const s: Record<string, React.CSSProperties> = {
     zIndex: 100,
     boxShadow: '0 2px 16px rgba(0,0,0,0.5)',
     userSelect: 'none',
-    overflow: 'visible',
+    overflowX: 'auto',
   },
   row1: {
     display: 'flex',

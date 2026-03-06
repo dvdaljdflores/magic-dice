@@ -135,18 +135,18 @@ export default function WarhammerBoard() {
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative', background: '#08080f' }}>
 
-<Canvas
-  shadows
-  camera={{
-    position: isMobile ? [0, 11, 9] : [0, 18, 15],
-    fov: isMobile ? 60 : 40,
-    near: 0.5,
-    far: 85,
-  }}
-  gl={{ antialias: true, powerPreference: 'high-performance' }}
-  dpr={[1, 2]}
-  style={canvasStyle}
->
+      <Canvas
+        shadows
+        camera={{
+          position: isMobile ? [0, 11, 9] : [0, 18, 15],
+          fov: isMobile ? 60 : 40,
+          near: 0.5,
+          far: 85,
+        }}
+        gl={{ antialias: true, powerPreference: 'high-performance' }}
+        dpr={[1, 2]}
+        style={canvasStyle}
+      >
 
         <fog attach="fog" args={['#08080f', 22, 60]} />
 
@@ -159,15 +159,15 @@ export default function WarhammerBoard() {
           lethalMask={lethalMask}
         />
 
-<OrbitControls
-  enabled={!cameraLocked}
-  enablePan={false}
-  minPolarAngle={isMobile ? 0.9 : 0.25}
-  maxPolarAngle={isMobile ? 1.35 : Math.PI / 2.1}
-  minDistance={isMobile ? 5 : 8}
-  maxDistance={isMobile ? 22 : 38}
-  target={(isMobile ? [0, 0, -8] : [0, 0, 0]) as [number, number, number]}
-/>
+        <OrbitControls
+          enabled={!cameraLocked}
+          enablePan={false}
+          minPolarAngle={isMobile ? 0.9 : 0.25}
+          maxPolarAngle={isMobile ? 1.35 : Math.PI / 2.1}
+          minDistance={isMobile ? 5 : 8}
+          maxDistance={isMobile ? 22 : 38}
+          target={isMobile ? [0, 0, -8] : [0, 0, 0]}
+        />
 
       </Canvas>
 

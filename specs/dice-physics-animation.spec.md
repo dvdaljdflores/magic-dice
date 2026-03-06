@@ -85,7 +85,7 @@ export const PHYSICS_CONFIG = {
 ## Escala de dados (`computeScale`)
 
 ```typescript
-// src/core/ArrangeLayout.ts y src/components/DiceScene.tsx
+// src/core/ArrangeLayout.ts y src/components/DiceScene/sceneUtils.ts
 function computeScale(n: number): number {
   return Math.max(0.4, Math.min(0.85, 5.5 / Math.sqrt(Math.max(1, n))));
 }
@@ -207,22 +207,25 @@ const maxPerRow = Math.max(1, Math.floor((BOARD_W - scale) / colSp));
 
 ---
 
-## DiceScene (`src/components/DiceScene.tsx`)
+## DiceScene (`src/components/DiceScene/`)
 
 ### Estructura de componentes
 
 ```
-DiceScene
-├── Lighting
-├── Board (incluye zona lethal si hasAnyLethal)
-├── PreviewGrid        — solo en PREVIEW
-├── Physics            — solo en ROLLING + SETTLING
-│   ├── PhysicsDice    — un RigidBody por dado, con colisión cuboid
-│   ├── PhysicsFloor   — suelo fijo
-│   └── PhysicsWalls   — 4 paredes fijas
-└── ArrangedDice       — solo en ARRANGING + ARRANGED
-    ├── instancedMesh (normal)
-    └── instancedMesh (lethal, morado)
+DiceScene/
+├── index.tsx             — Orquestador: geo, mat, lethalMat, sustainedMat, fase routing
+├── sceneUtils.ts         — Temp THREE.js objects (_p, _q, _sc, _mat, _zero),
+│                           board dimensions, computeScale(), easeOutCubic()
+├── Lighting.tsx           — Ambient + directional + point lights
+├── BoardMesh.tsx          — Mesa + marcos + zona lethal highlight
+├── PreviewGrid.tsx        — InstancedMesh grid (PREVIEW)
+├── PhysicsDice.tsx        — RigidBody por dado (ROLLING + SETTLING)
+├── PhysicsEnvironment.tsx — Floor + 4 Walls colliders
+├── ArrangedDice.tsx       — 3 InstancedMeshes (ARRANGING + ARRANGED)
+│   ├── instancedMesh (normal — color del dado)
+│   ├── instancedMesh (lethal — gold #eaad05)
+│   └── instancedMesh (sustained — teal #00e0f2)
+└── RowLabels.tsx          — Face labels next to arranged rows
 ```
 
 ### PhysicsDice — mejoras de spawn
@@ -263,11 +266,18 @@ useFrame((_, dt) => {
 
 - `easeOutCubic(t)` para la curva de entrada
 - Interpolación posición Y con offset de entrada: `startY = target.y + 2*(1-t)`
-- Dos InstancedMesh: normal (color del dado) + lethal (morado `#cc44ff`)
+- Tres InstancedMesh:
+  - **Normal** — color del dado (via `DIE_COLOR_MAP[dieColor]`)
+  - **Lethal** — gold `rgb(0.92, 0.68, 0.02)` para Mortal Wounds
+  - **Sustained** — teal `rgb(0.0, 0.88, 0.95)` para dados generados por Sustained Hits
 
 ---
 
-## ResultsPanel (`src/components/ResultsPanel.tsx`)
+## ResultsPanel (`src/components/ResultsPanel.tsx` → routing wrapper)
+
+ResultsPanel es un thin wrapper (~42 líneas) que delega a:
+- **Desktop** → `DesktopResultsPanel` — panel izquierdo fijo con tabla + historial + modal
+- **Mobile** → `MobileResultsView` — action strip flotante + chip toggle + sheet colapsable
 
 ### Nuevos comportamientos
 
@@ -384,29 +394,162 @@ TC-H7: undo() → entrada con actionLabel '↩ regresar'
 
 ```
 src/
+  constants/
+    theme.ts                        — FONT_FAMILY, COLOR_SWATCHES, COLOR_HEX, FACES,
+                                      MOBILE_BREAKPOINT, TOP_BAR_H, LEFT_PANEL_W,
+                                      MOBILE_BAR_H, MAX_DICE
+
   core/
-    types.ts              — GamePhase, RollHistoryEntry (+ actionLabel), ThrowParams, ArrangeTarget
-    DiceEngine.ts         — RNG Mulberry32, rollDice(), faceUpQuaternion()
-    ThrowCalculator.ts    — computeThrowParams() — parámetros de lanzamiento visual
-    ArrangeLayout.ts      — computeArrangeTargets() + computeScale() — layout ordenado
-    RulesConfig.ts        — Reglas Warhammer (placeholder)
+    types.ts                        — GamePhase, DieColor (8 colores), RollHistoryEntry,
+                                      ThrowParams, ArrangeTarget, WarhPhase, SustainedX
+    DiceEngine.ts                   — RNG Mulberry32, rollDice(), faceUpQuaternion()
+    DiceCalculations.ts             — Funciones puras: getFaceCount, getRerollableCount,
+                                      getLethalCount, isGroupLethal, getDeleteableCount,
+                                      getRerollableBelowCount
+    formatUtils.ts                  — faceEmoji, formatTime, formatHistoryValues,
+                                      formatHistShort, phaseLabel, phaseShort, spinningLabel
+    ThrowCalculator.ts              — computeThrowParams()
+    ArrangeLayout.ts                — computeArrangeTargets(), computeScale(),
+                                      setMobileLayoutMode(), isMobileLayout()
+    RulesConfig.ts                  — Reglas Warhammer (placeholder)
+
+  hooks/
+    useMobileDetect.ts              — Detección viewport < 768px + sync ArrangeLayout
+    useDeviceMotion.ts              — Shake-to-roll con permiso iOS DeviceMotion
 
   physics/
-    constants.ts          — PHYSICS_CONFIG (gravity, damping, thresholds, timeout)
-    settleDetection.ts    — isBodySettled()
+    constants.ts                    — PHYSICS_CONFIG
+    settleDetection.ts              — isBodySettled()
 
   rendering/
-    DiceGeometry.ts       — BoxGeometry con UV atlas
-    DiceMaterial.ts       — MeshStandardMaterial + DIE_COLOR_MAP
+    DiceGeometry.ts                 — BoxGeometry con UV atlas
+    DiceMaterial.ts                 — MeshStandardMaterial + DIE_COLOR_MAP (8 colores)
 
   store/
-    diceStore.ts          — Zustand store (estado + acciones + undo)
+    diceStore.ts                    — Zustand store (estado + acciones + undo)
 
   components/
-    DiceScene.tsx         — Rendering 3D (PreviewGrid, PhysicsDice, ArrangedDice)
-    WarhammerBoard.tsx    — Orquestador (Canvas + UIControls + ResultsPanel)
-    UIControls.tsx        — Barra superior
-    ResultsPanel.tsx      — Panel izquierdo (resultados + historial + Regresar)
+    WarhammerBoard.tsx              — Orquestador (~110 líneas, useShallow para store)
+    UIControls.tsx                  — Router → MobileControlBar | DesktopControlBar
+    ResultsPanel.tsx                — Router → MobileResultsView | DesktopResultsPanel
+    DiceScene/
+      index.tsx                     — Orquestador 3D: geo, mats, fase routing
+      sceneUtils.ts                 — Temp THREE.js objects, board dims, computeScale
+      Lighting.tsx                  — Luces de la escena
+      BoardMesh.tsx                 — Mesa + marcos + zona lethal
+      PreviewGrid.tsx               — Grid estática (PREVIEW)
+      PhysicsDice.tsx               — Dados con física (ROLLING + SETTLING)
+      PhysicsEnvironment.tsx        — Floor + Walls colliders
+      ArrangedDice.tsx              — 3 InstancedMeshes (ARRANGING + ARRANGED)
+      RowLabels.tsx                 — Labels de cara junto a filas
+    ui/
+      ResultsTable.tsx              — Tabla compartida mobile/desktop (prop compact)
+      HistoryModal.tsx              — Modal full-screen para detalle de historial
+      MobileResultsView.tsx         — Action strip + chip toggle + sheet colapsable
+      DesktopResultsPanel.tsx       — Panel izquierdo fijo
+      MobileControlBar.tsx          — Barra compacta 1 fila con dropdowns
+      DesktopControlBar.tsx         — Barra 2 filas con botones inline
+```
+
+---
+
+## Mobile Features
+
+### Detección y layout
+
+- **Breakpoint**: `window.innerWidth < 768` → `isMobile = true`
+- Hook `useMobileDetect()` sincroniza con `ArrangeLayout.setMobileLayoutMode()`
+- Board dimensions ajustadas: mobile usa `16×22` vs desktop `22×16`
+
+### Shake-to-roll (`useDeviceMotion`)
+
+- Usa `DeviceMotionEvent` API para detectar sacudidas del dispositivo
+- En iOS requiere permiso explícito via `DeviceMotionEvent.requestPermission()`
+- Threshold de aceleración para disparar `throwDice()`
+- Solo activo cuando `canThrow = phase === 'PREVIEW' || phase === 'ARRANGED'`
+
+### MobileControlBar
+
+- Fila única compacta con scroll horizontal
+- Presets reducidos: `[+1, +5, +10]` (vs desktop `[+1, +2, +5, +10, +25]`)
+- Turn/Phase/History como **dropdowns** (vs desktop botones inline)
+- Color swatches más pequeños (16px vs 20px)
+
+### MobileResultsView
+
+- **Action strip**: Fila flotante derecha con botones de undo + sustained selector
+  - Solo visible en `ARRANGED`
+- **Toggle chip**: Botón centrado para abrir/cerrar la sheet de resultados
+- **Collapsible results sheet**: Panel deslizable desde abajo
+  - Usa `ResultsTable` con `compact=true` (botones más grandes, labels abreviados)
+  - Se cierra al tocar fuera
+
+### DesktopResultsPanel
+
+- Panel izquierdo fijo (240px ancho)
+- `ResultsTable` con `compact=false`
+- Historial con click para modal de detalle (`HistoryModal`)
+
+---
+
+## DieColor expandido
+
+```typescript
+export type DieColor = 'white' | 'red' | 'blue' | 'green' | 'yellow' | 'orange' | 'purple' | 'black';
+```
+
+| Color | Hex | Label |
+|-------|-----|-------|
+| white | #e8e8e8 | Blanco |
+| blue | #2a7a8a | Azul |
+| red | #c03020 | Rojo |
+| green | #20a040 | Verde |
+| yellow | #c9a800 | Amarillo |
+| orange | #c05010 | Naranja |
+| purple | #8030c0 | Morado |
+| black | #1a1a20 | Negro |
+
+---
+
+## Hooks
+
+### `useMobileDetect(): boolean`
+
+Detecta viewport < 768px en un `useEffect` con listener de resize. Sincroniza el flag module-level en `ArrangeLayout` para que `computeArrangeTargets` use dimensiones mobile.
+
+### `useDeviceMotion(enabled, canThrow, onShake): void`
+
+Registra listener de `devicemotion` cuando `enabled && canThrow`. En iOS, solicita permiso la primera vez. Detecta aceleración > threshold y llama `onShake()`.
+
+---
+
+## Shared Constants (`src/constants/theme.ts`)
+
+```typescript
+export const FONT_FAMILY      = '...';
+export const MOBILE_BREAKPOINT = 768;
+export const TOP_BAR_H        = 73;
+export const LEFT_PANEL_W     = 240;
+export const MOBILE_BAR_H     = 60;
+export const MAX_DICE          = 120;
+export const FACES             = [1, 2, 3, 4, 5, 6];
+export const COLOR_SWATCHES    = [...]; // 8 colores
+export const COLOR_HEX         = {...}; // DieColor → hex string
+```
+
+---
+
+## DiceCalculations (`src/core/DiceCalculations.ts`)
+
+Funciones puras compartidas por `ResultsTable`, `MobileResultsView`, y `DesktopResultsPanel`:
+
+```typescript
+getFaceCount(rollResult, activeMask, faceValue): number
+getRerollableCount(rollResult, activeMask, lethalMask, faceValue): number
+getLethalCount(rollResult, activeMask, lethalMask, faceValue): number
+isGroupLethal(rollResult, activeMask, lethalMask, faceValue): boolean
+getDeleteableCount(rollResult, activeMask, faceValue): number
+getRerollableBelowCount(rollResult, activeMask, lethalMask, faceValue): number
 ```
 
 ---
@@ -429,6 +572,22 @@ El undo está en Zustand porque necesita guardarse antes de cada mutación sínc
 
 Algunos dados con baja fricción + alta energía inicial pueden rebotar indefinidamente. El timeout garantiza que la experiencia siempre avanza.
 
+### Component routing pattern (Desktop/Mobile)
+
+`UIControls` y `ResultsPanel` son thin wrappers (~40 líneas) que delegan a variantes Desktop/Mobile basándose en `isMobile`. Este patrón:
+- Elimina duplicación de interfaces (cada variante tiene su propio prop interface)
+- Mantiene estilos co-ubicados con cada variante
+- Permite evolucionar mobile/desktop independientemente
+- Estado local (dropdowns, sheets) vive en la variante que lo necesita
+
+### useShallow para suscripciones Zustand
+
+`WarhammerBoard` agrupa sus ~26 suscripciones al store en 2 llamadas `useShallow` (state values + actions). Esto reduce el número de suscripciones y previene re-renders innecesarios por cambios en slices no relacionados.
+
+### THREE.js temp objects en sceneUtils.ts
+
+Los objetos mutables `_p`, `_q`, `_sc`, `_mat`, `_zero` son singletons compartidos entre `PreviewGrid`, `ArrangedDice`, y otros sub-componentes. Nunca se duplican — siempre se importan desde `sceneUtils.ts`. Esto evita GC pressure en el hot path de `useFrame`.
+
 ### @react-three/rapier vs @dimforge/rapier3d-compat directo
 
 `@react-three/rapier` provee integración React limpia: `<Physics>`, `<RigidBody>`, refs directas. Evitar gestionar el WASM loop manualmente (que causaba panics en la versión anterior con `world.timestep = dt`).
@@ -440,7 +599,7 @@ Algunos dados con baja fricción + alta energía inicial pueden rebotar indefini
 - Sonido de dados cayendo/rebotando
 - Partículas de impacto
 - Multijugador / networking
-- Corrección de cara por torque durante SETTLING (se usa snap en ARRANGING)
+- Corrección de cara por torque durante SETTLING (se usa pre-settle rotation snap)
 - Physics LOD
 - Replay de animación
 - Configuración de física en UI

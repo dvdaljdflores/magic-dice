@@ -8,10 +8,12 @@ import { useDiceStore } from '../store/diceStore';
 import { DiceScene } from './DiceScene';
 import { UIControls } from './UIControls';
 import { ResultsPanel } from './ResultsPanel';
+import { HistoryModal } from './ui/HistoryModal';
 import { TOP_BAR_H, LEFT_PANEL_W, MOBILE_BAR_H } from '../constants/theme';
 import { useMobileDetect } from '../hooks/useMobileDetect';
 import { useDeviceMotion } from '../hooks/useDeviceMotion';
 import { setMobileLayoutMode } from '../core/ArrangeLayout';
+import type { RollHistoryEntry } from '../core/types';
 
 export default function WarhammerBoard() {
 
@@ -57,7 +59,9 @@ export default function WarhammerBoard() {
   const isMobile = useMobileDetect();
   const [cameraLocked, setCameraLocked] = useState(false);
 
-  // Sincroniza el modo móvil con ArrangeLayout
+  /* NUEVO: estado del modal */
+  const [modalEntry, setModalEntry] = useState<RollHistoryEntry | null>(null);
+
   useEffect(() => {
     setMobileLayoutMode(isMobile);
   }, [isMobile]);
@@ -133,6 +137,7 @@ export default function WarhammerBoard() {
         cameraLocked={cameraLocked}
         onCameraLockChange={(v) => setCameraLocked(v)}
         history={history}
+        onHistoryClick={setModalEntry} 
       />
 
       <ResultsPanel
@@ -153,6 +158,14 @@ export default function WarhammerBoard() {
         isMobile={isMobile}
         mobileBarH={MOBILE_BAR_H}
       />
+
+      {/* MODAL GLOBAL */}
+      {modalEntry && (
+        <HistoryModal
+          entry={modalEntry}
+          onClose={() => setModalEntry(null)}
+        />
+      )}
 
     </div>
   );

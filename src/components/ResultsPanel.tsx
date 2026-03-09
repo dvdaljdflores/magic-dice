@@ -35,7 +35,7 @@ export function ResultsPanel({
   isMobile, mobileBarH, history, ...shared
 }: ResultsPanelProps) {
   if (isMobile) {
-    return <MobileResultsView {...shared} mobileBarH={mobileBarH} />;
+    return <MobileResultsView {...shared} history={history} mobileBarH={mobileBarH} />;
   }
   return <DesktopResultsPanel {...shared} history={history} />;
 }

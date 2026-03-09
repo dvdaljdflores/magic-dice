@@ -30,6 +30,7 @@ interface MobileControlBarProps {
   cameraLocked: boolean;
   onCameraLockChange: (v: boolean) => void;
   history: RollHistoryEntry[];
+  onHistoryClick: (entry: RollHistoryEntry) => void;
 }
 
 const ADD_PRESETS = [1, 5, 10];
@@ -40,7 +41,9 @@ export function MobileControlBar({
   currentTurn, onTurnChange, currentPhase, onPhaseChange,
   gamePhase, onThrow, onReset,
   animEnabled, onAnimEnabledChange,
-  cameraLocked, onCameraLockChange, history,
+  cameraLocked, onCameraLockChange,
+  history,
+  onHistoryClick,
 }: MobileControlBarProps) {
   const [turnOpen,  setTurnOpen]  = useState(false);
   const [phaseOpen, setPhaseOpen] = useState(false);
@@ -147,7 +150,15 @@ export function MobileControlBar({
                     ? entry.actionLabel!
                     : `T${entry.turn}${entry.isReroll ? ' · rep.' : ''}`;
                   return (
-                    <div key={entry.id} style={s.histItem}>
+                    <div
+  key={entry.id}
+  style={{ ...s.histItem, cursor: 'pointer' }}
+  onClick={(e) => {
+    e.stopPropagation();
+    setHistOpen(false);
+    onHistoryClick(entry);
+  }}
+>
                       <div style={s.histItemRow}>
                         <span style={{
                           color: isAction ? '#9966cc' : entry.isReroll ? '#c9a84c' : '#4a7aaa',

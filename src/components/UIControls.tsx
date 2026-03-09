@@ -29,13 +29,31 @@ interface UIControlsProps {
   cameraLocked: boolean;
   onCameraLockChange: (v: boolean) => void;
   history: RollHistoryEntry[];
+  onHistoryClick: (entry: RollHistoryEntry) => void;
 }
 
 export function UIControls({
-  isMobile, onRepeat, history, ...shared
+  isMobile,
+  onRepeat,
+  history,
+  onHistoryClick,
+  ...shared
 }: UIControlsProps) {
+
   if (isMobile) {
-    return <MobileControlBar {...shared} history={history} />;
+    return (
+      <MobileControlBar
+        {...shared}
+        history={history}
+        onHistoryClick={onHistoryClick}
+      />
+    );
   }
-  return <DesktopControlBar {...shared} onRepeat={onRepeat} />;
+
+  return (
+    <DesktopControlBar
+      {...shared}
+      onRepeat={onRepeat}
+    />
+  );
 }

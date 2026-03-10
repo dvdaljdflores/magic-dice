@@ -12,6 +12,8 @@ import type { GamePhase, DieColor, WarhPhase, RollHistoryEntry } from '../../cor
 import { WARH_PHASE_LABEL } from '../../core/types';
 import { FONT_FAMILY, COLOR_SWATCHES } from '../../constants/theme';
 import { formatTime, formatHistShort, phaseShort } from '../../core/formatUtils';
+import { useSessionStore } from '../../session/sessionStore';
+import type { SessionDiceRoll } from '../../session/sessionTypes';
 
 interface MobileControlBarProps {
   count: number;
@@ -55,6 +57,13 @@ export function MobileControlBar({
   const [turnOpen,  setTurnOpen]  = useState(false);
   const [phaseOpen, setPhaseOpen] = useState(false);
   const [histOpen,  setHistOpen]  = useState(false);
+
+  // Rival rolls from session (other players, not ours)
+  const session  = useSessionStore(s => s.session);
+  const clientId = useSessionStore(s => s.clientId);
+  const rivalRolls: SessionDiceRoll[] = session
+    ? session.history.filter(r => r.playerId !== clientId)
+    : [];
 
   const busy = gamePhase === 'ROLLING' || gamePhase === 'SETTLING' || gamePhase === 'ARRANGING';
 
@@ -151,42 +160,73 @@ export function MobileControlBar({
           {histOpen && (
             <div style={{ ...s.dropMenu, right: 0, left: 'auto', width: 260, maxHeight: 360, overflowY: 'auto' }}>
               <div style={s.histHead}>HISTORIAL</div>
-              {history.length === 0 ? (
+              {history.length === 0 && rivalRolls.length === 0 ? (
                 <div style={s.histEmpty}>sin tiradas aún</div>
               ) : (
-                [...history].reverse().map(entry => {
-                  const isAction = !!entry.actionLabel;
-                  const title = isAction
-                    ? entry.actionLabel!
-                    : `T${entry.turn}${entry.isReroll ? ' · rep.' : ''}`;
-                  return (
-                    <div
-  key={entry.id}
-  style={{ ...s.histItem, cursor: 'pointer' }}
-  onClick={(e) => {
-    e.stopPropagation();
-    setHistOpen(false);
-    onHistoryClick(entry);
-  }}
->
-                      <div style={s.histItemRow}>
-                        <span style={{
-                          color: isAction ? '#9966cc' : entry.isReroll ? '#c9a84c' : '#4a7aaa',
-                          fontSize: 10, fontWeight: 700,
-                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        }}>{title}</span>
-                        <span style={{ color: '#2a3a50', fontSize: 9, flexShrink: 0 }}>
-                          {formatTime(entry.timestamp)}
-                        </span>
-                      </div>
-                      {entry.values.length > 0 && (
-                        <div style={{ color: '#2a4060', fontSize: 9, marginTop: 1 }}>
-                          {formatHistShort(entry.values)}
+                (() => {
+                  type Item =
+                    | { kind: 'local'; ts: number; entry: RollHistoryEntry }
+                    | { kind: 'rival'; ts: number; roll: SessionDiceRoll };
+
+                  const items: Item[] = [
+                    ...history.map(e  => ({ kind: 'local' as const, ts: e.timestamp,  entry: e })),
+                    ...rivalRolls.map(r => ({ kind: 'rival' as const, ts: r.timestamp, roll: r  })),
+                  ];
+                  items.sort((a, b) => b.ts - a.ts);
+
+                  return items.map(item => {
+                    if (item.kind === 'local') {
+                      const entry = item.entry;
+                      const isAction = !!entry.actionLabel;
+                      const title = isAction
+                        ? entry.actionLabel!
+                        : `T${entry.turn}${entry.isReroll ? ' · rep.' : ''}`;
+                      return (
+                        <div
+                          key={entry.id}
+                          style={{ ...s.histItem, cursor: 'pointer' }}
+                          onClick={(e) => { e.stopPropagation(); setHistOpen(false); onHistoryClick(entry); }}
+                        >
+                          <div style={s.histItemRow}>
+                            <span style={{
+                              color: isAction ? '#9966cc' : entry.isReroll ? '#c9a84c' : '#4a7aaa',
+                              fontSize: 10, fontWeight: 700,
+                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            }}>{title}</span>
+                            <span style={{ color: '#2a3a50', fontSize: 9, flexShrink: 0 }}>
+                              {formatTime(entry.timestamp)}
+                            </span>
+                          </div>
+                          {entry.values.length > 0 && (
+                            <div style={{ color: '#2a4060', fontSize: 9, marginTop: 1 }}>
+                              {formatHistShort(entry.values)}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  );
-                })
+                      );
+                    }
+
+                    // Rival roll
+                    const roll = item.roll;
+                    return (
+                      <div key={roll.id} style={s.histItem}>
+                        <div style={s.histItemRow}>
+                          <span style={{
+                            color: '#cc8866', fontSize: 10, fontWeight: 700,
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}>{roll.playerName}</span>
+                          <span style={{ color: '#2a3a50', fontSize: 9, flexShrink: 0 }}>
+                            {formatTime(roll.timestamp)}
+                          </span>
+                        </div>
+                        <div style={{ color: '#2a4060', fontSize: 9, marginTop: 1 }}>
+                          Total: <span style={{ color: '#cc8866', fontWeight: 700 }}>{roll.result}</span>
+                          {roll.dice.length > 0 && ` · [${roll.dice.slice(0, 6).join(', ')}${roll.dice.length > 6 ? ` +${roll.dice.length - 6}` : ''}]`}
+                        </div>
+                      </div>
+                    );
+                  });
+                })()
               )}
             </div>
           )}

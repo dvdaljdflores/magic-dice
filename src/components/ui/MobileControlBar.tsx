@@ -31,6 +31,12 @@ interface MobileControlBarProps {
   onCameraLockChange: (v: boolean) => void;
   history: RollHistoryEntry[];
   onHistoryClick: (entry: RollHistoryEntry) => void;
+  /**
+   * Roll permission gate.
+   * When false (spectator) the TIRAR button is hidden.
+   * Defaults to true for backwards compatibility.
+   */
+  canRoll?: boolean;
 }
 
 const ADD_PRESETS = [1, 5, 10];
@@ -44,6 +50,7 @@ export function MobileControlBar({
   cameraLocked, onCameraLockChange,
   history,
   onHistoryClick,
+  canRoll = true,
 }: MobileControlBarProps) {
   const [turnOpen,  setTurnOpen]  = useState(false);
   const [phaseOpen, setPhaseOpen] = useState(false);
@@ -55,11 +62,14 @@ export function MobileControlBar({
     <div style={s.bar}>
       {/* Row 1: Primary actions */}
       <div style={s.row}>
-        <button
-          style={{ ...s.throwBtn, opacity: count > 0 ? 1 : 0.45 }}
-          onClick={onThrow}
-          disabled={count === 0 || busy || (gamePhase !== 'PREVIEW' && gamePhase !== 'ARRANGED')}
-        >▶ TIRAR</button>
+        {/* Throw button hidden for spectators */}
+        {canRoll && (
+          <button
+            style={{ ...s.throwBtn, opacity: count > 0 ? 1 : 0.45 }}
+            onClick={onThrow}
+            disabled={count === 0 || busy || (gamePhase !== 'PREVIEW' && gamePhase !== 'ARRANGED')}
+          >▶ TIRAR</button>
+        )}
 
         <div style={s.sep} />
 

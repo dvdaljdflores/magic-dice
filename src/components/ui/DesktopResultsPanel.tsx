@@ -15,6 +15,8 @@ import {
 } from '../../core/formatUtils';
 import { ResultsTable } from './ResultsTable';
 import { HistoryModal } from './HistoryModal';
+import { useSessionStore } from '../../session/sessionStore';
+import type { SessionDiceRoll } from '../../session/sessionTypes';
 
 interface DesktopResultsPanelProps {
   rollResult:  DiceRollResult | null;
@@ -40,6 +42,13 @@ export function DesktopResultsPanel({
   onUndo, canUndo,
 }: DesktopResultsPanelProps) {
   const [modalEntry, setModalEntry] = useState<RollHistoryEntry | null>(null);
+
+  // Read rival rolls from session (other players' rolls, not ours)
+  const session   = useSessionStore(s => s.session);
+  const clientId  = useSessionStore(s => s.clientId);
+  const rivalRolls: SessionDiceRoll[] = session
+    ? session.history.filter(r => r.playerId !== clientId)
+    : [];
 
   const dipColor   = COLOR_HEX[dieColor];
   const hasResult  = rollResult !== null;
@@ -92,47 +101,88 @@ export function DesktopResultsPanel({
           </div>
         )}
 
-        {/* History */}
+        {/* History — merges local rolls + rival session rolls, newest first */}
         <div style={{ ...s.sectionHead, marginTop: 10 }}>HISTORIAL</div>
 
-        {history.length === 0 ? (
+        {history.length === 0 && rivalRolls.length === 0 ? (
           <div style={s.histEmpty}>sin tiradas aún</div>
         ) : (
           <div style={s.histList}>
-            {[...history].reverse().map(entry => {
-              const pLabel   = phaseLabel(entry.phase);
-              const isAction = !!entry.actionLabel;
-              const title    = isAction
-                ? entry.actionLabel!
-                : `Turno ${entry.turn}${pLabel ? ` (${pLabel})` : ''}${entry.isReroll ? ' · rep.' : ''}`;
-              const valStr   = formatHistoryValues(entry.values);
+            {/* Build a unified list: local RollHistoryEntry + rival SessionDiceRoll */}
+            {((): React.ReactNode[] => {
+              type Item =
+                | { kind: 'local'; ts: number; entry: RollHistoryEntry }
+                | { kind: 'rival'; ts: number; roll: SessionDiceRoll };
 
-              return (
-                <div
-                  key={entry.id}
-                  style={{ ...s.histBlock, cursor: 'pointer' }}
-                  onClick={() => setModalEntry(entry)}
-                >
-                  <div style={s.histTitle}>
-                    <span style={histDotStyle(COLOR_HEX[entry.color])} />
-                    <span style={{
-                      color: isAction ? '#9966cc' : entry.isReroll ? '#c9a84c' : '#4a7aaa',
-                    }}>
-                      {title}
-                    </span>
-                    <span style={{ color: '#2a3a50', marginLeft: 'auto', fontSize: 9 }}>
-                      {formatTime(entry.timestamp)}
-                    </span>
-                  </div>
-                  {valStr && <div style={s.histValues}>{valStr}</div>}
-                  {entry.diceCount > 0 && (
-                    <div style={{ color: '#2a4060', fontSize: 8, paddingLeft: 11 }}>
-                      {entry.diceCount} dado{entry.diceCount !== 1 ? 's' : ''}
+              const items: Item[] = [
+                ...history.map(e  => ({ kind: 'local' as const, ts: e.timestamp,  entry: e })),
+                ...rivalRolls.map(r => ({ kind: 'rival' as const, ts: r.timestamp, roll: r  })),
+              ];
+              items.sort((a, b) => b.ts - a.ts); // newest first
+
+              return items.map(item => {
+                if (item.kind === 'local') {
+                  const entry    = item.entry;
+                  const pLabel   = phaseLabel(entry.phase);
+                  const isAction = !!entry.actionLabel;
+                  const title    = isAction
+                    ? entry.actionLabel!
+                    : `Turno ${entry.turn}${pLabel ? ` (${pLabel})` : ''}${entry.isReroll ? ' · rep.' : ''}`;
+                  const valStr   = formatHistoryValues(entry.values);
+
+                  return (
+                    <div
+                      key={entry.id}
+                      style={{ ...s.histBlock, cursor: 'pointer' }}
+                      onClick={() => setModalEntry(entry)}
+                    >
+                      <div style={s.histTitle}>
+                        <span style={histDotStyle(COLOR_HEX[entry.color])} />
+                        <span style={{
+                          color: isAction ? '#9966cc' : entry.isReroll ? '#c9a84c' : '#4a7aaa',
+                        }}>
+                          {title}
+                        </span>
+                        <span style={{ color: '#2a3a50', marginLeft: 'auto', fontSize: 9 }}>
+                          {formatTime(entry.timestamp)}
+                        </span>
+                      </div>
+                      {valStr && <div style={s.histValues}>{valStr}</div>}
+                      {entry.diceCount > 0 && (
+                        <div style={{ color: '#2a4060', fontSize: 8, paddingLeft: 11 }}>
+                          {entry.diceCount} dado{entry.diceCount !== 1 ? 's' : ''}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                  );
+                }
+
+                // Rival roll entry
+                const roll   = item.roll;
+                const valStr = roll.dice.length > 0
+                  ? `[${roll.dice.slice(0, 8).join(', ')}${roll.dice.length > 8 ? ` +${roll.dice.length - 8}` : ''}]`
+                  : '';
+
+                return (
+                  <div key={roll.id} style={s.histBlock}>
+                    <div style={s.histTitle}>
+                      <span style={histDotStyle('#cc6644')} />
+                      <span style={{ color: '#cc8866', fontWeight: 700 }}>
+                        {roll.playerName}
+                      </span>
+                      <span style={{ color: '#2a3a50', marginLeft: 'auto', fontSize: 9 }}>
+                        {formatTime(roll.timestamp)}
+                      </span>
+                    </div>
+                    {valStr && <div style={s.histValues}>{valStr}</div>}
+                    <div style={{ color: '#2a4060', fontSize: 8, paddingLeft: 11 }}>
+                      Total: <span style={{ color: '#cc8866', fontWeight: 700 }}>{roll.result}</span>
+                      {' · '}{roll.dice.length} dado{roll.dice.length !== 1 ? 's' : ''}
+                    </div>
+                  </div>
+                );
+              });
+            })()}
           </div>
         )}
       </div>

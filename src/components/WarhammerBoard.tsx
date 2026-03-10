@@ -15,7 +15,16 @@ import { useDeviceMotion } from '../hooks/useDeviceMotion';
 import { setMobileLayoutMode } from '../core/ArrangeLayout';
 import type { RollHistoryEntry } from '../core/types';
 
-export default function WarhammerBoard() {
+interface WarhammerBoardProps {
+  /**
+   * Roll permission gate injected by DiceTableScreen.
+   * When false (spectator role) the TIRAR button is hidden in the control bars.
+   * Defaults to true so existing usage without sessions is unaffected.
+   */
+  canRoll?: boolean;
+}
+
+export default function WarhammerBoard({ canRoll = true }: WarhammerBoardProps) {
 
   const {
     count, phase, rollResult, dieColor, activeMask, lethalMask,
@@ -137,7 +146,8 @@ export default function WarhammerBoard() {
         cameraLocked={cameraLocked}
         onCameraLockChange={(v) => setCameraLocked(v)}
         history={history}
-        onHistoryClick={setModalEntry} 
+        onHistoryClick={setModalEntry}
+        canRoll={canRoll}
       />
 
       <ResultsPanel

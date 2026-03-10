@@ -30,6 +30,8 @@ interface UIControlsProps {
   onCameraLockChange: (v: boolean) => void;
   history: RollHistoryEntry[];
   onHistoryClick: (entry: RollHistoryEntry) => void;
+  /** When false (spectator) the throw button is hidden in the child bars. */
+  canRoll?: boolean;
 }
 
 export function UIControls({
@@ -37,6 +39,7 @@ export function UIControls({
   onRepeat,
   history,
   onHistoryClick,
+  canRoll = true,
   ...shared
 }: UIControlsProps) {
 
@@ -46,6 +49,7 @@ export function UIControls({
         {...shared}
         history={history}
         onHistoryClick={onHistoryClick}
+        canRoll={canRoll}
       />
     );
   }
@@ -54,6 +58,7 @@ export function UIControls({
     <DesktopControlBar
       {...shared}
       onRepeat={onRepeat}
+      canRoll={canRoll}
     />
   );
 }

@@ -29,6 +29,12 @@ interface DesktopControlBarProps {
   onAnimEnabledChange: (v: boolean) => void;
   cameraLocked: boolean;
   onCameraLockChange: (v: boolean) => void;
+  /**
+   * Roll permission gate.
+   * When false (spectator mode) the throw and repeat buttons are hidden.
+   * Defaults to true for backwards compatibility.
+   */
+  canRoll?: boolean;
 }
 
 const ADD_PRESETS = [1, 2, 5, 10, 25];
@@ -41,6 +47,7 @@ export function DesktopControlBar({
   gamePhase, onThrow, onRepeat, onReset,
   animEnabled, onAnimEnabledChange,
   cameraLocked, onCameraLockChange,
+  canRoll = true,
 }: DesktopControlBarProps) {
   const busy = gamePhase === 'ROLLING' || gamePhase === 'SETTLING' || gamePhase === 'ARRANGING';
 
@@ -100,21 +107,27 @@ export function DesktopControlBar({
           title={animEnabled ? 'Desactivar animación' : 'Activar animación'}
         >⚙ FX {animEnabled ? 'ON' : 'OFF'}</button>
 
-        <button
-          style={s.repeatBtn}
-          onClick={onRepeat}
-          disabled={gamePhase !== 'ARRANGED'}
-          title="Repetir tirada"
-        >↺ Repetir</button>
+        {/* Repeat button hidden for spectators */}
+        {canRoll && (
+          <button
+            style={s.repeatBtn}
+            onClick={onRepeat}
+            disabled={gamePhase !== 'ARRANGED'}
+            title="Repetir tirada"
+          >↺ Repetir</button>
+        )}
       </div>
 
       {/* Row 2 */}
       <div style={s.row2}>
-        <button
-          style={{ ...s.throwBtn, opacity: count > 0 ? 1 : 0.45 }}
-          onClick={onThrow}
-          disabled={count === 0 || busy || (gamePhase !== 'PREVIEW' && gamePhase !== 'ARRANGED')}
-        >▶ TIRAR DADOS</button>
+        {/* Throw button hidden for spectators */}
+        {canRoll && (
+          <button
+            style={{ ...s.throwBtn, opacity: count > 0 ? 1 : 0.45 }}
+            onClick={onThrow}
+            disabled={count === 0 || busy || (gamePhase !== 'PREVIEW' && gamePhase !== 'ARRANGED')}
+          >▶ TIRAR DADOS</button>
+        )}
 
         <div style={s.sep} />
 

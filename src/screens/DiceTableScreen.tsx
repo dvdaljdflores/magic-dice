@@ -184,8 +184,8 @@ export function DiceTableScreen() {
       {roleBadge && (
         <div style={{
           position:   'absolute',
-          top:        isMobile ? 'auto' : 80,
-          bottom:     isMobile ? 200 : 'auto',
+          top:        isMobile ? 84 : 80,
+          bottom:     'auto',
           right:      isMobile ? 'auto' : 12,
           left:       isMobile ? 8 : 'auto',
           zIndex:     150,
